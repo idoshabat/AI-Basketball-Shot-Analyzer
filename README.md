@@ -46,11 +46,13 @@ python src/analyze_video.py videos/ft2.mp4 --save-chart --save-annotated-video -
 Generated files:
 
 ```text
-data/ft2_keypoints.csv
-data/ft2_features.csv
-output/ft2_angles.png
-output/ft2_annotated.mp4
-output/ft2_report.json
+storage/analyses/<run_id>/
+  input/original.mp4
+  data/keypoints.csv
+  data/features.csv
+  output/angles.png
+  output/annotated.mp4
+  report.json
 ```
 
 ## API Server
@@ -82,11 +84,19 @@ save_annotated_video=true
 save_report=true
 ```
 
-Generated output files are available under:
+Generated analysis files are grouped by run and available under:
 
 ```text
-http://127.0.0.1:8000/output/<filename>
+http://127.0.0.1:8000/storage/analyses/<run_id>/...
 ```
+
+Saved analysis runs are automatically cleaned up on API startup. The default retention is 7 days.
+
+```bash
+ANALYSIS_RETENTION_DAYS=14 venv/bin/uvicorn src.api:app --reload
+```
+
+Set `ANALYSIS_RETENTION_DAYS=0` to disable automatic cleanup.
 
 ## Frontend
 

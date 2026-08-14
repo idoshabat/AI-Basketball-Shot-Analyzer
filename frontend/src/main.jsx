@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
@@ -42,12 +42,22 @@ function formatFrameRange(item) {
   return `Frames ${item.start_frame}-${item.end_frame}`;
 }
 
+function formatRunDate(value) {
+  if (!value) {
+    return "Unknown time";
+  }
+
+  return value;
+}
+
 function App() {
   const [file, setFile] = useState(null);
   const [includeAnnotatedVideo, setIncludeAnnotatedVideo] = useState(true);
   const [result, setResult] = useState(null);
+  const [analysisHistory, setAnalysisHistory] = useState([]);
   const [error, setError] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const annotatedVideoRef = useRef(null);
   const annotatedVideoSectionRef = useRef(null);
 
@@ -95,6 +105,67 @@ function App() {
     video.play().catch(() => {});
   }
 
+  async function loadAnalysisHistory() {
+    setIsLoadingHistory(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/analyses?limit=10`);
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Could not load recent analyses.");
+      }
+
+      setAnalysisHistory(data);
+    } catch (historyError) {
+      setError(historyError.message);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  }
+
+  async function openSavedAnalysis(runId) {
+    setError("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/analyses/${runId}`);
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Could not open saved analysis.");
+      }
+
+      setResult(data);
+    } catch (savedAnalysisError) {
+      setError(savedAnalysisError.message);
+    }
+  }
+
+  async function deleteSavedAnalysis(analysis) {
+    const shouldDelete = window.confirm(`Delete analysis "${analysis.run_id}"? This cannot be undone.`);
+    if (!shouldDelete) {
+      return;
+    }
+
+    setError("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/analyses/${analysis.run_id}`, {
+        method: "DELETE",
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Could not delete saved analysis.");
+      }
+
+      if (result?.run_id === analysis.run_id) {
+        setResult(null);
+      }
+      loadAnalysisHistory();
+    } catch (deleteError) {
+      setError(deleteError.message);
+    }
+  }
+
+  useEffect(() => {
+    loadAnalysisHistory();
+  }, []);
+
   async function analyzeShot(event) {
     event.preventDefault();
     if (!file) {
@@ -127,6 +198,7 @@ function App() {
       }
 
       setResult(data);
+      loadAnalysisHistory();
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -169,6 +241,42 @@ function App() {
 
           {error && <p className="error-text">{error}</p>}
         </div>
+
+        <section className="history-panel">
+          <div className="section-header">
+            <h2>Recent Analyses</h2>
+            <button className="secondary-button" type="button" onClick={loadAnalysisHistory} disabled={isLoadingHistory}>
+              {isLoadingHistory ? "Loading..." : "Refresh"}
+            </button>
+          </div>
+
+          {analysisHistory.length > 0 ? (
+            <div className="history-list">
+              {analysisHistory.map((analysis) => (
+                <article className="history-item" key={analysis.run_id}>
+                  <div>
+                    <strong>{analysis.video}</strong>
+                    <span>{formatRunDate(analysis.created_at)}</span>
+                  </div>
+                  <div className="history-meta">
+                    <span>Score {analysis.score}</span>
+                    <span>{analysis.shooting_side}</span>
+                  </div>
+                  <div className="history-actions">
+                    <button className="secondary-button" type="button" onClick={() => openSavedAnalysis(analysis.run_id)}>
+                      Open
+                    </button>
+                    <button className="danger-button" type="button" onClick={() => deleteSavedAnalysis(analysis)}>
+                      Delete
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="empty-state">No saved analyses yet.</p>
+          )}
+        </section>
 
         {result && (
           <div className="results-grid">

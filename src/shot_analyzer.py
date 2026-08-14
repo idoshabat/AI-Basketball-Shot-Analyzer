@@ -515,6 +515,21 @@ def build_coaching_items(metrics: dict, phases: dict) -> list[dict]:
                 end_frame=metrics["jump_window_end"],
             )
         )
+    elif metrics["ankle_lift"] < 0.05:
+        coaching_items.append(
+            build_coaching_item(
+                title="Increase jump lift",
+                severity="medium",
+                metric="ankle_lift",
+                value=metrics["ankle_lift"],
+                target="0.05 or higher normalized ankle lift",
+                why_it_matters="A little more lift can improve rhythm and make the shot easier to repeat from distance.",
+                drill="Shoot short rhythm jumpers and focus on leaving the floor smoothly without drifting.",
+                phase="jump_window",
+                start_frame=metrics["jump_window_start"],
+                end_frame=metrics["jump_window_end"],
+            )
+        )
 
     if metrics["min_knee_angle"] > 150:
         coaching_items.append(
@@ -531,6 +546,21 @@ def build_coaching_items(metrics: dict, phases: dict) -> list[dict]:
                 end_frame=dip_load_phase[2],
             )
         )
+    elif metrics["min_knee_angle"] > 130:
+        coaching_items.append(
+            build_coaching_item(
+                title="Get slightly deeper in the load",
+                severity="medium",
+                metric="min_knee_angle",
+                value=metrics["min_knee_angle"],
+                target="130 degrees or lower at the deepest load",
+                why_it_matters="A slightly deeper knee load can create power earlier, so the release does not have to do all the work.",
+                drill="Use rhythm reps from close range: dip smoothly, keep balance, and rise without pausing.",
+                phase=dip_load_phase[0],
+                start_frame=dip_load_phase[1],
+                end_frame=dip_load_phase[2],
+            )
+        )
 
     if metrics["elbow_angle_std"] > 45:
         coaching_items.append(
@@ -542,6 +572,21 @@ def build_coaching_items(metrics: dict, phases: dict) -> list[dict]:
                 target="45 degrees or lower",
                 why_it_matters="Large variation in the shooting arm makes the release timing harder to repeat.",
                 drill="Shoot slow form reps from close range and keep the ball path centered every time.",
+                phase="full_shot",
+                start_frame=full_shot_start,
+                end_frame=full_shot_end,
+            )
+        )
+    elif metrics["elbow_angle_std"] > 25:
+        coaching_items.append(
+            build_coaching_item(
+                title="Tighten arm motion consistency",
+                severity="medium",
+                metric="elbow_angle_std",
+                value=metrics["elbow_angle_std"],
+                target="25 degrees or lower",
+                why_it_matters="Less variation in the shooting arm helps the release happen the same way each time.",
+                drill="Shoot slow form reps and check that the ball path and elbow finish match on every shot.",
                 phase="full_shot",
                 start_frame=full_shot_start,
                 end_frame=full_shot_end,

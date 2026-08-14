@@ -12,6 +12,8 @@ output/*.mp4
 output/*.webm
 output/*.png
 output/*.json
+storage/analyses/
 
 videos/*
 !videos/.gitkeep
+!storage/.gitkeep

@@ -35,6 +35,7 @@ input {
 }
 
 .upload-panel,
+.history-panel,
 .score-panel,
 .feedback-panel,
 .improvement-panel,
@@ -53,6 +54,86 @@ input {
   gap: 28px;
   align-items: center;
   padding: 28px;
+}
+
+.history-panel {
+  margin-top: 18px;
+  padding: 20px;
+}
+
+.section-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.secondary-button {
+  min-height: 38px;
+  padding: 0 14px;
+  background: #2f6f73;
+  font-size: 14px;
+}
+
+.danger-button {
+  min-height: 38px;
+  padding: 0 14px;
+  background: #b42318;
+  font-size: 14px;
+}
+
+.history-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.history-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 14px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid rgba(24, 32, 47, 0.1);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.history-item div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.history-item strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item span,
+.empty-state {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.history-meta {
+  justify-items: end;
+}
+
+.history-meta span:first-child {
+  color: #e95f35;
+  font-weight: 900;
+}
+
+.history-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.empty-state {
+  margin: 14px 0 0;
 }
 
 .eyebrow {
@@ -355,9 +436,24 @@ button:disabled {
 
   .upload-panel,
   .results-grid,
+  .history-item,
   .improvement-list,
   .metric-grid,
   .phase-list {
     grid-template-columns: 1fr;
+  }
+
+  .section-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .history-meta {
+    justify-items: start;
+  }
+
+  .history-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

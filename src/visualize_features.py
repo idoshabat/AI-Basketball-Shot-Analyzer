@@ -74,7 +74,7 @@ def plot_angles(features_csv_path: str, output_path: str | None = None, phases: 
     if missing_columns:
         raise ValueError(f"Missing feature columns: {', '.join(missing_columns)}")
 
-    OUTPUT_DIR.mkdir(exist_ok=True)
+    chart_path.parent.mkdir(parents=True, exist_ok=True)
     MPL_CACHE_DIR.mkdir(exist_ok=True)
 
     plt.figure(figsize=(12, 7))

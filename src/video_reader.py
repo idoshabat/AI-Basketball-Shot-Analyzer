@@ -48,7 +48,7 @@ def create_video_writer(cap, output_path: Path):
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    OUTPUT_DIR.mkdir(exist_ok=True)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     codec_candidates = {
         ".webm": ("VP80", "VP90"),
@@ -72,6 +72,8 @@ def read_video(
     save_keypoints: bool = False,
     display: bool = True,
     verbose: bool = True,
+    output_path: str | Path | None = None,
+    keypoints_path: str | Path | None = None,
 ) -> dict:
     path = resolve_video_path(video_path)
 
@@ -85,8 +87,8 @@ def read_video(
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     frame_delay = int(1000 / fps) if fps > 0 else 30
     pose_detector = PoseDetector() if show_pose or save_keypoints else None
-    output_path = build_output_path(path)
-    keypoints_path = build_keypoints_path(path)
+    output_path = Path(output_path) if output_path else build_output_path(path)
+    keypoints_path = Path(keypoints_path) if keypoints_path else build_keypoints_path(path)
     writer = create_video_writer(cap, output_path) if save_output else None
     keypoint_rows = []
 
@@ -129,7 +131,7 @@ def read_video(
         print(f"Saved output video: {output_path}")
 
     if save_keypoints:
-        DATA_DIR.mkdir(exist_ok=True)
+        keypoints_path.parent.mkdir(parents=True, exist_ok=True)
         headers = build_keypoint_headers(keypoint_rows)
         with keypoints_path.open("w", newline="") as csv_file:
             writer = csv.DictWriter(csv_file, fieldnames=headers)

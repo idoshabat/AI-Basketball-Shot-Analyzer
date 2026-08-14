@@ -100,7 +100,7 @@ def extract_features(keypoints_csv_path: str, output_csv_path: str | None = None
     features_df["right_wrist_y_velocity"] = features_df["right_wrist_y"].diff().fillna(0.0)
     features_df["left_wrist_y_velocity"] = features_df["left_wrist_y"].diff().fillna(0.0)
 
-    output_path.parent.mkdir(exist_ok=True)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     features_df.to_csv(output_path, index=False)
 
     return output_path
