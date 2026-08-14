@@ -9,6 +9,7 @@ frontend/dist/
 
 data/*.csv
 output/*.mp4
+output/*.webm
 output/*.png
 output/*.json
 

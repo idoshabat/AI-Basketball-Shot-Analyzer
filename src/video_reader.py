@@ -50,7 +50,12 @@ def create_video_writer(cap, output_path: Path):
 
     OUTPUT_DIR.mkdir(exist_ok=True)
 
-    for codec in ("avc1", "H264", "mp4v"):
+    codec_candidates = {
+        ".webm": ("VP80", "VP90"),
+        ".mp4": ("avc1", "H264", "mp4v"),
+    }
+
+    for codec in codec_candidates.get(output_path.suffix.lower(), ("avc1", "H264", "mp4v")):
         fourcc = cv2.VideoWriter_fourcc(*codec)
         writer = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
         if writer.isOpened():

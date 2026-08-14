@@ -9,7 +9,7 @@ from video_reader import OUTPUT_DIR, create_video_writer, resolve_video_path
 
 
 def build_annotated_video_path(video_path: Path) -> Path:
-    return OUTPUT_DIR / f"{video_path.stem}_annotated.mp4"
+    return OUTPUT_DIR / f"{video_path.stem}_annotated.webm"
 
 
 def draw_text(frame, text: str, position: tuple[int, int], scale: float = 0.6, color: tuple[int, int, int] = (255, 255, 255)) -> None:
