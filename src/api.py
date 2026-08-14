@@ -23,7 +23,11 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 app = FastAPI(title="AI Basketball Shot Analyzer")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
+    allow_origins=[
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        "https://ai-basketball-shot-analyzer-edb2.vercel.app/",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
