@@ -17,6 +17,7 @@ ALLOWED_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv"}
 DEFAULT_CORS_ORIGINS = [
     "http://127.0.0.1:5173",
     "http://localhost:5173",
+    "https://ai-basketball-shot-analyzer.vercel.app",
     "https://ai-basketball-shot-analyzer-edb2.vercel.app",
 ]
 
