@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import sys
 from uuid import uuid4
@@ -13,21 +14,30 @@ SRC_DIR = PROJECT_ROOT / "src"
 UPLOAD_DIR = PROJECT_ROOT / "videos" / "uploads"
 OUTPUT_DIR = PROJECT_ROOT / "output"
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv"}
+DEFAULT_CORS_ORIGINS = [
+    "http://127.0.0.1:5173",
+    "http://localhost:5173",
+    "https://ai-basketball-shot-analyzer-edb2.vercel.app",
+]
 
 sys.path.insert(0, str(SRC_DIR))
 
 from analyze_video import analyze_video, format_path
 
 
+def get_cors_origins() -> list[str]:
+    env_origins = os.getenv("CORS_ORIGINS")
+    if not env_origins:
+        return DEFAULT_CORS_ORIGINS
+
+    return [origin.strip().rstrip("/") for origin in env_origins.split(",") if origin.strip()]
+
+
 OUTPUT_DIR.mkdir(exist_ok=True)
 app = FastAPI(title="AI Basketball Shot Analyzer")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://127.0.0.1:5173",
-        "http://localhost:5173",
-        "https://ai-basketball-shot-analyzer-edb2.vercel.app/",
-    ],
+    allow_origins=get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
