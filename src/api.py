@@ -117,6 +117,7 @@ def build_file_response(result: dict) -> dict:
         "keypoints_csv": format_path(result["keypoints_path"]),
         "features_csv": format_path(result["features_path"]),
         "angles_chart": format_path(result["chart_path"]),
+        "follow_through_debug_chart": format_path(result["follow_through_debug_chart_path"]),
         "pose_video": format_path(result["output_path"]),
         "annotated_video": format_path(result["annotated_video_path"]),
         "json_report": format_path(result["report_path"]),
@@ -178,6 +179,10 @@ def build_saved_analysis_response(report: dict) -> dict:
     files = report.get("files", {})
     if report.get("run_id") and "json_report" not in files:
         files["json_report"] = f"storage/analyses/{report['run_id']}/report.json"
+    if report.get("run_id") and "follow_through_debug_chart" not in files:
+        debug_path = STORAGE_DIR / "analyses" / report["run_id"] / "output" / "follow_through_debug.png"
+        if debug_path.exists():
+            files["follow_through_debug_chart"] = format_path(debug_path)
 
     return make_json_safe(
         {
@@ -211,6 +216,10 @@ def summarize_report(report: dict) -> dict:
     files = report.get("files", {})
     if report.get("run_id") and "json_report" not in files:
         files["json_report"] = f"storage/analyses/{report['run_id']}/report.json"
+    if report.get("run_id") and "follow_through_debug_chart" not in files:
+        debug_path = STORAGE_DIR / "analyses" / report["run_id"] / "output" / "follow_through_debug.png"
+        if debug_path.exists():
+            files["follow_through_debug_chart"] = format_path(debug_path)
     output_urls = build_urls_from_files(files)
     run_id = report.get("run_id")
 
@@ -223,6 +232,7 @@ def summarize_report(report: dict) -> dict:
             "video": Path(files.get("original_video", "original.mp4")).name,
             "report_url": output_urls.get("json_report"),
             "chart_url": output_urls.get("angles_chart"),
+            "follow_through_debug_chart_url": output_urls.get("follow_through_debug_chart"),
             "annotated_video_url": output_urls.get("annotated_video"),
         }
     )

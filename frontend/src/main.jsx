@@ -64,6 +64,9 @@ function App() {
   const chartUrl = result?.output_urls?.angles_chart
     ? `${API_BASE_URL}${result.output_urls.angles_chart}`
     : null;
+  const followThroughDebugChartUrl = result?.output_urls?.follow_through_debug_chart
+    ? `${API_BASE_URL}${result.output_urls.follow_through_debug_chart}`
+    : null;
   const annotatedVideoUrl = result?.output_urls?.annotated_video
     ? `${API_BASE_URL}${result.output_urls.annotated_video}`
     : null;
@@ -75,6 +78,8 @@ function App() {
 
     return [
       ["Release Frame", result.metrics.release_frame],
+      ["Release Confidence", result.metrics.release_confidence],
+      ["Release Confidence Label", result.metrics.release_confidence_label],
       ["Release Elbow Angle", result.metrics.release_elbow_angle],
       ["Follow-Through End", result.metrics.follow_through_end_frame],
       ["Follow-Through Ratio", result.metrics.follow_through_ratio],
@@ -369,6 +374,13 @@ function App() {
               <section className="media-panel wide">
                 <h2>Angle Chart</h2>
                 <img src={chartUrl} alt="Phase shaded joint angle chart" />
+              </section>
+            )}
+
+            {followThroughDebugChartUrl && (
+              <section className="media-panel wide">
+                <h2>Follow-Through Debug</h2>
+                <img src={followThroughDebugChartUrl} alt="Follow-through wrist, shoulder, and elbow debug chart" />
               </section>
             )}
 

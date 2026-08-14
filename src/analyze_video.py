@@ -9,7 +9,7 @@ from uuid import uuid4
 from feature_extractor import extract_features
 from shot_analyzer import analyze_shot, print_report
 from video_annotator import annotate_video
-from visualize_features import plot_angles
+from visualize_features import plot_angles, plot_follow_through_debug
 from video_reader import read_video
 
 
@@ -43,6 +43,7 @@ def create_analysis_run(video_path: str, run_dir: str | Path | None = None) -> d
         "features": run_path / "data" / "features.csv",
         "pose_video": run_path / "output" / "pose.mp4",
         "angles_chart": run_path / "output" / "angles.png",
+        "follow_through_debug_chart": run_path / "output" / "follow_through_debug.png",
         "annotated_video": run_path / "output" / "annotated.mp4",
         "report": run_path / "report.json",
     }
@@ -86,6 +87,7 @@ def save_report(video_path: str, result: dict, report_path: str | Path | None = 
             "keypoints_csv": format_path(result["keypoints_path"]),
             "features_csv": format_path(result["features_path"]),
             "angles_chart": format_path(result["chart_path"]),
+            "follow_through_debug_chart": format_path(result["follow_through_debug_chart_path"]),
             "pose_video": format_path(result["output_path"]),
             "annotated_video": format_path(result["annotated_video_path"]),
             "json_report": format_path(report_path),
@@ -137,6 +139,15 @@ def analyze_video(
         if save_chart
         else None
     )
+    follow_through_debug_chart_path = (
+        plot_follow_through_debug(
+            str(features_path),
+            analysis,
+            output_path=str(run_paths["follow_through_debug_chart"]),
+        )
+        if save_chart
+        else None
+    )
     annotated_video_path = (
         annotate_video(str(input_video_path), str(features_path), output_path=str(run_paths["annotated_video"]))
         if save_annotated_video
@@ -150,6 +161,7 @@ def analyze_video(
         "keypoints_path": keypoints_path,
         "features_path": features_path,
         "chart_path": chart_path,
+        "follow_through_debug_chart_path": follow_through_debug_chart_path,
         "output_path": video_result["output_path"],
         "annotated_video_path": annotated_video_path,
         "video_metadata": video_result["metadata"],
@@ -184,6 +196,8 @@ def main() -> None:
     print(f"Saved features CSV: {result['features_path']}")
     if result["chart_path"]:
         print(f"Saved angles chart: {result['chart_path']}")
+    if result["follow_through_debug_chart_path"]:
+        print(f"Saved follow-through debug chart: {result['follow_through_debug_chart_path']}")
     if result["output_path"]:
         print(f"Saved output video: {result['output_path']}")
     if result["annotated_video_path"]:

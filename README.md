@@ -51,6 +51,7 @@ storage/analyses/<run_id>/
   data/keypoints.csv
   data/features.csv
   output/angles.png
+  output/follow_through_debug.png
   output/annotated.mp4
   report.json
 ```

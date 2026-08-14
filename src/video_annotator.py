@@ -63,14 +63,24 @@ def draw_overlay(frame, frame_number: int, analysis: dict) -> None:
     draw_text(frame, f"Score: {analysis['score']}/100", (12, 56))
     draw_text(frame, f"Release: {release_frame}", (12, 84))
     draw_text(frame, f"Method: {metrics['release_detection_method']}", (12, 112), scale=0.5)
-    draw_text(frame, f"Wrist vel: {metrics['release_wrist_y_velocity']:.3f}", (12, 140), scale=0.5)
-    draw_text(frame, f"Phase: {current_phase.replace('_', ' ').title()}", (12, 168), scale=0.5)
-    draw_text(frame, f"FT hold: {metrics['follow_through_frames']} frames", (12, 196), scale=0.5)
-    draw_text(frame, f"Hip rise: {metrics['hip_rise']:.3f}", (12, 224), scale=0.5)
-    draw_text(frame, f"Ankle lift: {metrics['ankle_lift']:.3f}", (12, 252), scale=0.5)
+    draw_text(
+        frame,
+        f"Release conf: {metrics['release_confidence']:.2f} ({metrics['release_confidence_label']})",
+        (12, 140),
+        scale=0.5,
+    )
+    draw_text(frame, f"Wrist vel: {metrics['release_wrist_y_velocity']:.3f}", (12, 168), scale=0.5)
+    draw_text(frame, f"Phase: {current_phase.replace('_', ' ').title()}", (12, 196), scale=0.5)
+    draw_text(frame, f"FT hold: {metrics['follow_through_frames']} frames", (12, 224), scale=0.5)
+    draw_text(frame, f"Hip rise: {metrics['hip_rise']:.3f}", (12, 252), scale=0.5)
+    draw_text(frame, f"Ankle lift: {metrics['ankle_lift']:.3f}", (12, 280), scale=0.5)
 
     if frame_number == release_frame:
-        draw_banner(frame, f"RELEASE: {metrics['release_detection_method']}", (0, 120, 255))
+        draw_banner(
+            frame,
+            f"RELEASE: {metrics['release_detection_method']} / {metrics['release_confidence_label'].upper()}",
+            (0, 120, 255),
+        )
     elif follow_through_status == "held_until_video_end" and frame_number > release_frame:
         draw_banner(frame, "FOLLOW THROUGH HOLDING", (0, 150, 0))
     elif follow_through_end is not None and release_frame < frame_number < follow_through_end:

@@ -681,6 +681,69 @@ def find_release_row(df: pd.DataFrame, shooting_side: str) -> tuple[pd.Series, s
     return candidate_df.iloc[0], "height_and_extension"
 
 
+def label_confidence(confidence: float) -> str:
+    if confidence >= 0.75:
+        return "high"
+    if confidence >= 0.5:
+        return "medium"
+
+    return "low"
+
+
+def calculate_release_confidence(
+    df: pd.DataFrame,
+    shooting_side: str,
+    release_row: pd.Series,
+    release_detection_method: str,
+    phases: dict,
+) -> tuple[float, str]:
+    wrist_y_column = f"{shooting_side}_wrist_y"
+    wrist_velocity_column = f"{shooting_side}_wrist_y_velocity"
+    elbow_column = f"{shooting_side}_elbow_angle"
+    release_frame = int(release_row["frame"])
+
+    confidence = 0.0
+
+    max_elbow_angle = df[elbow_column].max()
+    release_elbow_angle = release_row[elbow_column]
+    if max_elbow_angle > 0:
+        extension_score = max(0.0, min(1.0, release_elbow_angle / max_elbow_angle))
+        confidence += 0.30 * extension_score
+
+    if wrist_y_column in df.columns:
+        highest_wrist_y = df[wrist_y_column].min()
+        wrist_range = max(0.001, df[wrist_y_column].max() - highest_wrist_y)
+        wrist_height_score = 1.0 - min(1.0, max(0.0, (release_row[wrist_y_column] - highest_wrist_y) / (wrist_range * 0.35)))
+        confidence += 0.25 * wrist_height_score
+
+    method_scores = {
+        "velocity_transition": 1.0,
+        "stable_high_wrist": 0.8,
+        "height_and_extension": 0.7,
+        "highest_wrist_fallback": 0.45,
+        "max_elbow_fallback": 0.35,
+    }
+    confidence += 0.25 * method_scores.get(release_detection_method, 0.4)
+
+    if wrist_velocity_column in df.columns:
+        release_velocity = abs(release_row[wrist_velocity_column])
+        velocity_score = 1.0 - min(1.0, release_velocity / 0.03)
+        confidence += 0.10 * velocity_score
+
+    upward_motion = phases.get("upward_motion")
+    release_phase = phases.get("release")
+    if release_phase and release_phase["start_frame"] == release_frame:
+        phase_score = 1.0
+    elif upward_motion and upward_motion["start_frame"] <= release_frame <= upward_motion["end_frame"] + 3:
+        phase_score = 0.8
+    else:
+        phase_score = 0.35
+    confidence += 0.10 * phase_score
+
+    confidence = round(max(0.0, min(1.0, confidence)), 2)
+    return confidence, label_confidence(confidence)
+
+
 def analyze_shot(features_csv_path: str) -> dict:
     path = resolve_features_path(features_csv_path)
     df = pd.read_csv(path).dropna()
@@ -706,6 +769,13 @@ def analyze_shot(features_csv_path: str) -> dict:
     leg_drive = measure_leg_drive(df, release_frame, shooting_side)
     jump = measure_jump(df, release_frame)
     phases = detect_phases(df, release_frame, leg_drive, follow_through)
+    release_confidence, release_confidence_label = calculate_release_confidence(
+        df,
+        shooting_side,
+        release_row,
+        release_detection_method,
+        phases,
+    )
 
     elbow_score, elbow_feedback = score_elbow_extension(max_elbow_angle)
     knee_score, knee_feedback = score_knee_bend(min_knee_angle)
@@ -732,6 +802,8 @@ def analyze_shot(features_csv_path: str) -> dict:
         "elbow_angle_std": elbow_angle_std,
         "release_frame": release_frame,
         "release_detection_method": release_detection_method,
+        "release_confidence": release_confidence,
+        "release_confidence_label": release_confidence_label,
         "release_elbow_angle": release_elbow_angle,
         "release_knee_angle": release_knee_angle,
         "release_wrist_y": release_wrist_y,
@@ -772,6 +844,7 @@ def print_report(analysis: dict) -> None:
     print(f"- Elbow angle standard deviation: {metrics['elbow_angle_std']:.1f}")
     print(f"- Release frame: {metrics['release_frame']}")
     print(f"- Release detection method: {metrics['release_detection_method']}")
+    print(f"- Release confidence: {metrics['release_confidence']:.2f} ({metrics['release_confidence_label']})")
     print(f"- Release elbow angle: {metrics['release_elbow_angle']:.1f}")
     print(f"- Release knee angle: {metrics['release_knee_angle']:.1f}")
     if metrics["release_wrist_y"] is not None:
