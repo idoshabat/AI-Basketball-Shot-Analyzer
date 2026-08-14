@@ -1,0 +1,16 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+
+venv/
+.matplotlib/
+frontend/node_modules/
+frontend/dist/
+
+data/*.csv
+output/*.mp4
+output/*.png
+output/*.json
+
+videos/*
+!videos/.gitkeep
