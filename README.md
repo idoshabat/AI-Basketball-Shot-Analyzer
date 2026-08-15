@@ -18,6 +18,7 @@ The goal of this project is not just to detect pose landmarks. It behaves like a
 - Save analysis runs for later review.
 - Compare two saved shots manually.
 - Compare the current shot to the best saved shot automatically.
+- Choose the camera view before analysis so scoring uses metrics that are actually visible from that angle.
 - Load a built-in sample result, including annotated video, from the frontend for quick demos without uploading a file.
 
 ## Demo Flow
@@ -206,6 +207,29 @@ The analyzer currently estimates:
 - follow-through end frame
 - setup, load, upward motion, release, follow-through, and recovery phases
 - arm motion variation
+
+## Camera View Awareness
+
+The app supports `side`, `front`, and `back` camera views.
+
+Side view emphasizes:
+
+- release frame
+- elbow extension
+- knee bend depth
+- hip rise
+- ankle-based jump lift
+- follow-through timing
+
+Front/back view emphasizes:
+
+- wrist, elbow, and shoulder stacking at release
+- knee tracking over the feet
+- left-right stance symmetry
+- shoulder level
+- body lean
+
+This matters because the app should not strongly grade a metric that is not visible from the selected camera angle.
 
 ## Deployment Notes
 

@@ -77,6 +77,7 @@ function resolveOutputUrl(path) {
 
 function App() {
   const [file, setFile] = useState(null);
+  const [cameraView, setCameraView] = useState("side");
   const [includeAnnotatedVideo, setIncludeAnnotatedVideo] = useState(true);
   const [result, setResult] = useState(null);
   const [analysisHistory, setAnalysisHistory] = useState([]);
@@ -99,7 +100,7 @@ function App() {
       return [];
     }
 
-    return [
+    const metrics = [
       ["Release Frame", result.metrics.release_frame],
       ["Release Confidence", result.metrics.release_confidence],
       ["Release Confidence Label", result.metrics.release_confidence_label],
@@ -109,6 +110,20 @@ function App() {
       ["Hip Rise", result.metrics.hip_rise],
       ["Ankle Lift", result.metrics.ankle_lift],
     ];
+
+    if (result.camera_view !== "side") {
+      metrics.push(
+        ["Left Shin Vertical Error", result.metrics.left_shin_vertical_error],
+        ["Right Shin Vertical Error", result.metrics.right_shin_vertical_error],
+        ["Shin Parallel Error", result.metrics.shin_parallel_error],
+        ["Foot Parallel Error", result.metrics.foot_parallel_error],
+        ["Forearm Vertical Error", result.metrics.forearm_vertical_error],
+        ["Follow-Through Line Error", result.metrics.follow_through_vertical_error],
+        ["Body Lean", result.metrics.body_lean],
+      );
+    }
+
+    return metrics;
   }, [result]);
 
   const improvementItems = useMemo(() => {
@@ -265,28 +280,46 @@ function App() {
       return;
     }
 
+    const selectedCameraView = event.currentTarget.elements.camera_view?.value || cameraView;
     setIsAnalyzing(true);
     setError("");
     setResult(null);
 
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("camera_view", selectedCameraView);
 
     const params = new URLSearchParams({
       save_chart: "true",
       save_annotated_video: includeAnnotatedVideo ? "true" : "false",
       save_report: "true",
+      camera_view: selectedCameraView,
     });
 
     try {
       const response = await fetch(`${API_BASE_URL}/analyze-shot?${params}`, {
         method: "POST",
+        headers: {
+          "X-Camera-View": selectedCameraView,
+        },
         body: formData,
       });
 
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.detail || "Analysis failed.");
+      }
+
+      if (!data.camera_view) {
+        throw new Error("The backend did not return a camera view. Restart the backend and analyze again.");
+      }
+
+      if (data.camera_view !== selectedCameraView) {
+        throw new Error(`Camera view mismatch: selected ${selectedCameraView}, backend analyzed ${data.camera_view}.`);
+      }
+
+      if (selectedCameraView !== "side" && data.metrics?.alignment_status !== "measured") {
+        throw new Error("Front/back alignment metrics were not generated. Restart the backend and analyze the video again.");
       }
 
       setResult(data);
@@ -334,6 +367,15 @@ function App() {
             </label>
 
             <label className="toggle-row">
+              <span>Camera view</span>
+              <select name="camera_view" value={cameraView} onChange={(event) => setCameraView(event.target.value)}>
+                <option value="side">Side</option>
+                <option value="front">Front</option>
+                <option value="back">Back</option>
+              </select>
+            </label>
+
+            <label className="toggle-row">
               <input
                 type="checkbox"
                 checked={includeAnnotatedVideo}
@@ -364,7 +406,7 @@ function App() {
               <h2>Analyzing your shot</h2>
               <p>
                 The backend is processing pose detection, metrics, charts, and optional annotated video. This can take a few
-                minutes on Render's low-CPU instance.
+                minutes on Render's low-CPU instance. Camera view: {titleCase(cameraView)}.
               </p>
               <div className="loading-bar" aria-hidden="true">
                 <span />
@@ -489,6 +531,7 @@ function App() {
                 <p className="eyebrow">Shot Score</p>
                 <div className="score">{result.score}</div>
                 <p className="subtle">Shooting side: {result.shooting_side}</p>
+                <p className="subtle">Camera view: {titleCase(result.camera_view || "side")}</p>
                 <button
                   className="best-shot-button"
                   type="button"

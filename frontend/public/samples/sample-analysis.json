@@ -2,6 +2,7 @@
   "run_id": "sample_best_form",
   "score": 85,
   "shooting_side": "right",
+  "camera_view": "side",
   "video_metadata": {
     "fps": 24,
     "frame_count": 240,

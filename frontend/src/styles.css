@@ -31,7 +31,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -460,6 +461,17 @@ h2 {
   align-items: center;
   color: var(--ink-soft);
   font-weight: 750;
+}
+
+.toggle-row select {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid rgba(47, 115, 114, 0.28);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  font-weight: 850;
 }
 
 .button-spinner {

@@ -79,6 +79,7 @@ def save_report(video_path: str, result: dict, report_path: str | Path | None = 
         "video": format_path(Path(video_path)),
         "score": result["analysis"]["score"],
         "shooting_side": result["analysis"]["shooting_side"],
+        "camera_view": result["analysis"]["camera_view"],
         "video_metadata": result["video_metadata"],
         "metrics": result["analysis"]["metrics"],
         "phases": result["analysis"]["phases"],
@@ -112,6 +113,7 @@ def analyze_video(
     display: bool = False,
     run_dir: str | Path | None = None,
     copy_input: bool = True,
+    camera_view: str = "side",
 ) -> dict:
     run_paths = create_analysis_run(video_path, run_dir)
     source_video_path = Path(video_path)
@@ -135,7 +137,7 @@ def analyze_video(
 
     keypoints_path = video_result["keypoints_path"]
     features_path = extract_features(str(keypoints_path), str(run_paths["features"]))
-    analysis = analyze_shot(str(features_path))
+    analysis = analyze_shot(str(features_path), camera_view=camera_view)
     chart_path = (
         plot_angles(str(features_path), output_path=str(run_paths["angles_chart"]), phases=analysis["phases"])
         if save_chart
@@ -151,7 +153,12 @@ def analyze_video(
         else None
     )
     annotated_video_path = (
-        annotate_video(str(input_video_path), str(features_path), output_path=str(run_paths["annotated_video"]))
+        annotate_video(
+            str(input_video_path),
+            str(features_path),
+            output_path=str(run_paths["annotated_video"]),
+            camera_view=camera_view,
+        )
         if save_annotated_video
         else None
     )
@@ -183,6 +190,7 @@ def main() -> None:
     parser.add_argument("--save-annotated-video", action="store_true", help="Save a video with pose skeleton and analysis overlays")
     parser.add_argument("--save-report", action="store_true", help="Save a JSON report with metrics, feedback, and file paths")
     parser.add_argument("--display", action="store_true", help="Show the processed video while analyzing")
+    parser.add_argument("--camera-view", choices=["side", "front", "back"], default="side", help="Camera angle used for view-specific scoring")
     args = parser.parse_args()
 
     result = analyze_video(
@@ -192,6 +200,7 @@ def main() -> None:
         save_annotated_video=args.save_annotated_video,
         save_json_report=args.save_report,
         display=args.display,
+        camera_view=args.camera_view,
     )
 
     print(f"Saved keypoints CSV: {result['keypoints_path']}")

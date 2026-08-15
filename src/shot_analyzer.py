@@ -1,10 +1,12 @@
 import argparse
+import math
 from pathlib import Path
 
 import pandas as pd
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+SUPPORTED_CAMERA_VIEWS = {"side", "front", "back"}
 
 
 def resolve_features_path(csv_path: str) -> Path:
@@ -331,6 +333,298 @@ def score_jump(ankle_lift: float) -> tuple[int, str]:
     return 3, "Jump lift looks limited based on ankle height change."
 
 
+def normalize_camera_view(camera_view: str) -> str:
+    view = (camera_view or "side").strip().lower()
+    if view not in SUPPORTED_CAMERA_VIEWS:
+        raise ValueError(f"Unsupported camera view: {camera_view}. Choose one of: side, front, back.")
+
+    return view
+
+
+def safe_column_value(row: pd.Series, column: str) -> float | None:
+    if column not in row or pd.isna(row[column]):
+        return None
+
+    return float(row[column])
+
+
+def get_body_width(row: pd.Series) -> float:
+    shoulder_width = abs(row.get("right_shoulder_x", 0.0) - row.get("left_shoulder_x", 0.0))
+    hip_width = abs(row.get("right_hip_x", 0.0) - row.get("left_hip_x", 0.0))
+
+    return max(shoulder_width, hip_width, 0.001)
+
+
+def line_angle_to_floor(
+    start_x: float | None,
+    start_y: float | None,
+    end_x: float | None,
+    end_y: float | None,
+) -> float | None:
+    if None in (start_x, start_y, end_x, end_y):
+        return None
+
+    dx = end_x - start_x
+    dy = end_y - start_y
+    if dx == 0 and dy == 0:
+        return None
+
+    angle = abs(math.degrees(math.atan2(dy, dx)))
+    return 180 - angle if angle > 180 else angle
+
+
+def vertical_error(angle_to_floor: float | None) -> float | None:
+    if angle_to_floor is None:
+        return None
+
+    return abs(90 - angle_to_floor)
+
+
+def horizontal_error(angle_to_floor: float | None) -> float | None:
+    if angle_to_floor is None:
+        return None
+
+    return min(angle_to_floor, abs(180 - angle_to_floor))
+
+
+def median_line_angle_to_floor(df: pd.DataFrame, start_prefix: str, end_prefix: str) -> float | None:
+    angles = []
+    for _, row in df.iterrows():
+        angle = line_angle_to_floor(
+            safe_column_value(row, f"{start_prefix}_x"),
+            safe_column_value(row, f"{start_prefix}_y"),
+            safe_column_value(row, f"{end_prefix}_x"),
+            safe_column_value(row, f"{end_prefix}_y"),
+        )
+        if angle is not None:
+            angles.append(angle)
+
+    if not angles:
+        return None
+
+    return float(pd.Series(angles).median())
+
+
+def measure_alignment(df: pd.DataFrame, shooting_side: str, release_frame: int) -> dict:
+    required_columns = [
+        "right_shoulder_x",
+        "left_shoulder_x",
+        "right_hip_x",
+        "left_hip_x",
+        "right_knee_x",
+        "left_knee_x",
+        "right_ankle_x",
+        "left_ankle_x",
+    ]
+    if any(column not in df.columns for column in required_columns):
+        return {
+            "shoulder_level_delta": 0.0,
+            "body_lean": 0.0,
+            "arm_stack_error": None,
+            "knee_to_ankle_alignment_error": 0.0,
+            "leg_symmetry_error": 0.0,
+            "left_shin_angle_to_floor": None,
+            "right_shin_angle_to_floor": None,
+            "left_shin_vertical_error": None,
+            "right_shin_vertical_error": None,
+            "shin_parallel_error": None,
+            "left_foot_angle_to_floor": None,
+            "right_foot_angle_to_floor": None,
+            "left_foot_floor_error": None,
+            "right_foot_floor_error": None,
+            "foot_parallel_error": None,
+            "forearm_angle_to_floor": None,
+            "forearm_vertical_error": None,
+            "follow_through_line_angle_to_floor": None,
+            "follow_through_vertical_error": None,
+            "alignment_status": "missing_landmark_x_features",
+        }
+
+    release_rows = df[df["frame"] == release_frame]
+    release_row = release_rows.iloc[0] if not release_rows.empty else df.iloc[len(df) // 2]
+    body_width = get_body_width(release_row)
+
+    shoulder_level_delta = abs(release_row["right_shoulder_y"] - release_row["left_shoulder_y"])
+    hip_center_x = (release_row["right_hip_x"] + release_row["left_hip_x"]) / 2
+    shoulder_center_x = (release_row["right_shoulder_x"] + release_row["left_shoulder_x"]) / 2
+    body_lean = abs(shoulder_center_x - hip_center_x) / body_width
+
+    wrist_x = safe_column_value(release_row, f"{shooting_side}_wrist_x")
+    elbow_x = safe_column_value(release_row, f"{shooting_side}_elbow_x")
+    shoulder_x = safe_column_value(release_row, f"{shooting_side}_shoulder_x")
+    if wrist_x is None or elbow_x is None or shoulder_x is None:
+        arm_stack_error = None
+    else:
+        arm_stack_error = max(abs(wrist_x - elbow_x), abs(elbow_x - shoulder_x)) / body_width
+
+    stance_df = df.head(min(15, len(df)))
+    left_knee_offset = (stance_df["left_knee_x"] - stance_df["left_ankle_x"]).abs().median()
+    right_knee_offset = (stance_df["right_knee_x"] - stance_df["right_ankle_x"]).abs().median()
+    knee_to_ankle_alignment_error = float((left_knee_offset + right_knee_offset) / (2 * body_width))
+
+    left_leg_width = abs(release_row["left_hip_x"] - release_row["left_ankle_x"])
+    right_leg_width = abs(release_row["right_hip_x"] - release_row["right_ankle_x"])
+    leg_symmetry_error = abs(left_leg_width - right_leg_width) / body_width
+    left_shin_angle = line_angle_to_floor(
+        safe_column_value(release_row, "left_ankle_x"),
+        safe_column_value(release_row, "left_ankle_y"),
+        safe_column_value(release_row, "left_knee_x"),
+        safe_column_value(release_row, "left_knee_y"),
+    )
+    right_shin_angle = line_angle_to_floor(
+        safe_column_value(release_row, "right_ankle_x"),
+        safe_column_value(release_row, "right_ankle_y"),
+        safe_column_value(release_row, "right_knee_x"),
+        safe_column_value(release_row, "right_knee_y"),
+    )
+    left_shin_vertical_error = vertical_error(left_shin_angle)
+    right_shin_vertical_error = vertical_error(right_shin_angle)
+    shin_parallel_error = (
+        None
+        if left_shin_angle is None or right_shin_angle is None
+        else abs(left_shin_angle - right_shin_angle)
+    )
+    left_foot_angle = line_angle_to_floor(
+        safe_column_value(release_row, "left_heel_x"),
+        safe_column_value(release_row, "left_heel_y"),
+        safe_column_value(release_row, "left_foot_index_x"),
+        safe_column_value(release_row, "left_foot_index_y"),
+    )
+    right_foot_angle = line_angle_to_floor(
+        safe_column_value(release_row, "right_heel_x"),
+        safe_column_value(release_row, "right_heel_y"),
+        safe_column_value(release_row, "right_foot_index_x"),
+        safe_column_value(release_row, "right_foot_index_y"),
+    )
+    foot_parallel_error = (
+        None
+        if left_foot_angle is None or right_foot_angle is None
+        else abs(left_foot_angle - right_foot_angle)
+    )
+    left_foot_floor_error = horizontal_error(left_foot_angle)
+    right_foot_floor_error = horizontal_error(right_foot_angle)
+    forearm_angle = line_angle_to_floor(
+        safe_column_value(release_row, f"{shooting_side}_elbow_x"),
+        safe_column_value(release_row, f"{shooting_side}_elbow_y"),
+        safe_column_value(release_row, f"{shooting_side}_wrist_x"),
+        safe_column_value(release_row, f"{shooting_side}_wrist_y"),
+    )
+    forearm_vertical_error = vertical_error(forearm_angle)
+    follow_through_window = df[
+        (df["frame"] > release_frame)
+        & (df["frame"] <= min(int(df["frame"].max()), release_frame + 12))
+    ]
+    follow_through_line_angle = median_line_angle_to_floor(
+        follow_through_window,
+        f"{shooting_side}_elbow",
+        f"{shooting_side}_wrist",
+    )
+    follow_through_vertical_error = vertical_error(follow_through_line_angle)
+
+    return {
+        "shoulder_level_delta": float(shoulder_level_delta),
+        "body_lean": float(body_lean),
+        "arm_stack_error": None if arm_stack_error is None else float(arm_stack_error),
+        "knee_to_ankle_alignment_error": knee_to_ankle_alignment_error,
+        "leg_symmetry_error": float(leg_symmetry_error),
+        "left_shin_angle_to_floor": left_shin_angle,
+        "right_shin_angle_to_floor": right_shin_angle,
+        "left_shin_vertical_error": left_shin_vertical_error,
+        "right_shin_vertical_error": right_shin_vertical_error,
+        "shin_parallel_error": shin_parallel_error,
+        "left_foot_angle_to_floor": left_foot_angle,
+        "right_foot_angle_to_floor": right_foot_angle,
+        "left_foot_floor_error": left_foot_floor_error,
+        "right_foot_floor_error": right_foot_floor_error,
+        "foot_parallel_error": foot_parallel_error,
+        "forearm_angle_to_floor": forearm_angle,
+        "forearm_vertical_error": forearm_vertical_error,
+        "follow_through_line_angle_to_floor": follow_through_line_angle,
+        "follow_through_vertical_error": follow_through_vertical_error,
+        "alignment_status": "measured",
+    }
+
+
+def score_alignment(metrics: dict) -> tuple[int, list[str]]:
+    if metrics.get("alignment_status") == "missing_landmark_x_features":
+        return 30, ["Alignment metrics need newly extracted landmark x-coordinates for this camera view."]
+
+    score = 0
+    feedback = []
+
+    shin_error = max(
+        metrics["left_shin_vertical_error"] or 90,
+        metrics["right_shin_vertical_error"] or 90,
+    )
+    if shin_error <= 10 and (metrics["shin_parallel_error"] or 0) <= 10:
+        score += 15
+        feedback.append("Both lower legs stay close to vertical and parallel through the release.")
+    elif shin_error <= 18 and (metrics["shin_parallel_error"] or 0) <= 18:
+        score += 10
+        feedback.append("Lower-leg lines are decent, but one knee/ankle line drifts slightly.")
+    else:
+        score += 5
+        feedback.append("Lower-leg alignment is off: the knee-to-foot lines are not parallel and vertical enough.")
+
+    foot_parallel_error = metrics.get("foot_parallel_error")
+    foot_floor_error = max(
+        metrics.get("left_foot_floor_error") or 90,
+        metrics.get("right_foot_floor_error") or 90,
+    )
+    if foot_parallel_error is None:
+        score += 6
+        feedback.append("Foot direction could not be measured clearly from heel/toe landmarks.")
+    elif foot_parallel_error <= 12 and foot_floor_error <= 22:
+        score += 15
+        feedback.append("Feet look mostly parallel and square from this front/back view.")
+    elif foot_parallel_error <= 24:
+        score += 10
+        feedback.append("Feet are not perfectly parallel; check that both feet point the same direction.")
+    else:
+        score += 5
+        feedback.append("Feet are not parallel enough, which can pull the shot line off target.")
+
+    forearm_error = metrics.get("forearm_vertical_error")
+    if forearm_error is None:
+        score += 6
+        feedback.append("Forearm angle could not be measured clearly at release.")
+    elif forearm_error <= 12:
+        score += 15
+        feedback.append("Forearm is close to vertical at release.")
+    elif forearm_error <= 24:
+        score += 10
+        feedback.append("Forearm is slightly angled at release; try keeping elbow and wrist more stacked.")
+    else:
+        score += 5
+        feedback.append("Forearm angle is too tilted at release; wrist should finish more directly over the elbow.")
+
+    follow_through_error = metrics.get("follow_through_vertical_error")
+    if follow_through_error is None:
+        score += 6
+        feedback.append("Follow-through line could not be measured clearly after release.")
+    elif follow_through_error <= 12:
+        score += 15
+        feedback.append("Follow-through line stays straight toward the basket.")
+    elif follow_through_error <= 24:
+        score += 10
+        feedback.append("Follow-through line is close, but the hand path drifts slightly off center.")
+    else:
+        score += 5
+        feedback.append("Follow-through line drifts sideways instead of staying straight to the basket.")
+
+    if metrics["body_lean"] <= 0.18 and metrics["shoulder_level_delta"] <= 0.05:
+        score += 15
+        feedback.append("Torso and shoulders stay balanced from this angle.")
+    elif metrics["body_lean"] <= 0.3:
+        score += 10
+        feedback.append("Torso balance is acceptable, with some lean or shoulder tilt.")
+    else:
+        score += 5
+        feedback.append("Body lean is high; the shot may drift sideways.")
+
+    return score, feedback
+
+
 def build_coaching_item(
     title: str,
     severity: str,
@@ -379,7 +673,7 @@ def get_full_shot_window(phases: dict) -> tuple[int | None, int | None]:
     return start_frame, end_frame
 
 
-def build_coaching_items(metrics: dict, phases: dict) -> list[dict]:
+def build_coaching_items(metrics: dict, phases: dict, camera_view: str = "side") -> list[dict]:
     coaching_items = []
     release_phase = get_phase_window(
         phases,
@@ -406,6 +700,160 @@ def build_coaching_items(metrics: dict, phases: dict) -> list[dict]:
         metrics["release_frame"],
     )
     full_shot_start, full_shot_end = get_full_shot_window(phases)
+    alignment_phase = get_phase_window(
+        phases,
+        "release",
+        metrics["release_frame"],
+        metrics["release_frame"],
+    )
+
+    if camera_view in {"front", "back"}:
+        shin_error = max(
+            metrics.get("left_shin_vertical_error") or 0,
+            metrics.get("right_shin_vertical_error") or 0,
+        )
+        if shin_error > 18 or (metrics.get("shin_parallel_error") or 0) > 18:
+            coaching_items.append(
+                build_coaching_item(
+                    title="Make both knee-to-foot lines vertical",
+                    severity="high",
+                    metric="shin_parallel_error",
+                    value=metrics.get("shin_parallel_error"),
+                    target="Both shin lines within 18 degrees of vertical and parallel",
+                    why_it_matters="From the front, the knees should track over the feet so the shot loads straight instead of drifting sideways.",
+                    drill="Record front-view form shots and keep each knee moving directly over the same-side foot during the dip and release.",
+                    phase="release",
+                    start_frame=metrics["release_frame"],
+                    end_frame=metrics["release_frame"],
+                )
+            )
+        elif shin_error > 10 or (metrics.get("shin_parallel_error") or 0) > 10:
+            coaching_items.append(
+                build_coaching_item(
+                    title="Clean up knee-to-foot alignment",
+                    severity="medium",
+                    metric="shin_parallel_error",
+                    value=metrics.get("shin_parallel_error"),
+                    target="Both shin lines within 10 degrees of vertical and parallel",
+                    why_it_matters="A cleaner lower-body line keeps the base square and reduces sideways force.",
+                    drill="Use slow front-view reps and pause at the load to check knees stacked over feet.",
+                    phase="dip_load",
+                    start_frame=metrics["dip_load_start_frame"],
+                    end_frame=metrics["dip_load_end_frame"],
+                )
+            )
+
+        foot_error = metrics.get("foot_parallel_error")
+        if foot_error is not None and foot_error > 24:
+            coaching_items.append(
+                build_coaching_item(
+                    title="Square the feet to the same line",
+                    severity="high",
+                    metric="foot_parallel_error",
+                    value=foot_error,
+                    target="24 degrees or lower between left and right foot direction",
+                    why_it_matters="If the feet point in different directions, the hips and shoulders often rotate away from the shot line.",
+                    drill="Mark a straight line on the floor and start each rep with both feet parallel to that line.",
+                    phase="setup",
+                    start_frame=full_shot_start,
+                    end_frame=metrics["dip_load_start_frame"],
+                )
+            )
+        elif foot_error is not None and foot_error > 12:
+            coaching_items.append(
+                build_coaching_item(
+                    title="Make the feet more parallel",
+                    severity="medium",
+                    metric="foot_parallel_error",
+                    value=foot_error,
+                    target="12 degrees or lower between left and right foot direction",
+                    why_it_matters="Parallel feet make it easier to load and release on the same line.",
+                    drill="Take form shots with both toes set on the same floor line before every rep.",
+                    phase="setup",
+                    start_frame=full_shot_start,
+                    end_frame=metrics["dip_load_start_frame"],
+                )
+            )
+
+        forearm_error = metrics.get("forearm_vertical_error")
+        if forearm_error is not None and forearm_error > 24:
+            coaching_items.append(
+                build_coaching_item(
+                    title="Keep the forearm more vertical at release",
+                    severity="high",
+                    metric="forearm_vertical_error",
+                    value=forearm_error,
+                    target="24 degrees or less away from vertical",
+                    why_it_matters="From the front, a tilted forearm usually means the wrist is not stacked over the elbow, which can create side spin.",
+                    drill="Shoot one-hand form shots facing the camera and freeze with the wrist directly above the elbow.",
+                    phase=alignment_phase[0],
+                    start_frame=alignment_phase[1],
+                    end_frame=alignment_phase[2],
+                )
+            )
+        elif forearm_error is not None and forearm_error > 12:
+            coaching_items.append(
+                build_coaching_item(
+                    title="Straighten the forearm line",
+                    severity="medium",
+                    metric="forearm_vertical_error",
+                    value=forearm_error,
+                    target="12 degrees or less away from vertical",
+                    why_it_matters="A straighter forearm line helps the ball leave on a cleaner path.",
+                    drill="Pause at release on close shots and check wrist-over-elbow alignment.",
+                    phase=alignment_phase[0],
+                    start_frame=alignment_phase[1],
+                    end_frame=alignment_phase[2],
+                )
+            )
+
+        follow_through_error = metrics.get("follow_through_vertical_error")
+        if follow_through_error is not None and follow_through_error > 24:
+            coaching_items.append(
+                build_coaching_item(
+                    title="Finish the follow-through on the shot line",
+                    severity="high",
+                    metric="follow_through_vertical_error",
+                    value=follow_through_error,
+                    target="24 degrees or less away from vertical",
+                    why_it_matters="A sideways follow-through often means the hand is pushing across the ball instead of through the target.",
+                    drill="Hold the finish and point the fingers straight through the center line after release.",
+                    phase=follow_through_phase[0],
+                    start_frame=follow_through_phase[1],
+                    end_frame=follow_through_phase[2],
+                )
+            )
+        elif follow_through_error is not None and follow_through_error > 12:
+            coaching_items.append(
+                build_coaching_item(
+                    title="Reduce follow-through drift",
+                    severity="medium",
+                    metric="follow_through_vertical_error",
+                    value=follow_through_error,
+                    target="12 degrees or less away from vertical",
+                    why_it_matters="A cleaner follow-through line makes the release direction more repeatable.",
+                    drill="Shoot form reps and freeze the hand on the center line for one second.",
+                    phase=follow_through_phase[0],
+                    start_frame=follow_through_phase[1],
+                    end_frame=follow_through_phase[2],
+                )
+            )
+
+        if metrics.get("body_lean", 0) > 0.3:
+            coaching_items.append(
+                build_coaching_item(
+                    title="Reduce side lean",
+                    severity="medium",
+                    metric="body_lean",
+                    value=metrics["body_lean"],
+                    target="0.30 or lower normalized torso lean",
+                    why_it_matters="Side lean can push the release line off target.",
+                    drill="Shoot balanced form reps and land with your head and hips stacked over the same base.",
+                    phase="full_shot",
+                    start_frame=full_shot_start,
+                    end_frame=full_shot_end,
+                )
+            )
 
     if metrics["release_elbow_angle"] < 140:
         coaching_items.append(
@@ -469,7 +917,7 @@ def build_coaching_items(metrics: dict, phases: dict) -> list[dict]:
             )
         )
 
-    if metrics["hip_rise"] < 0.04:
+    if camera_view == "side" and metrics["hip_rise"] < 0.04:
         coaching_items.append(
             build_coaching_item(
                 title="Use more leg drive into the shot",
@@ -484,7 +932,7 @@ def build_coaching_items(metrics: dict, phases: dict) -> list[dict]:
                 end_frame=upward_motion_phase[2],
             )
         )
-    elif metrics["hip_rise"] < 0.08:
+    elif camera_view == "side" and metrics["hip_rise"] < 0.08:
         coaching_items.append(
             build_coaching_item(
                 title="Strengthen the upward push",
@@ -500,7 +948,7 @@ def build_coaching_items(metrics: dict, phases: dict) -> list[dict]:
             )
         )
 
-    if metrics["ankle_lift"] < 0.02:
+    if camera_view == "side" and metrics["ankle_lift"] < 0.02:
         coaching_items.append(
             build_coaching_item(
                 title="Add a cleaner jump lift",
@@ -515,7 +963,7 @@ def build_coaching_items(metrics: dict, phases: dict) -> list[dict]:
                 end_frame=metrics["jump_window_end"],
             )
         )
-    elif metrics["ankle_lift"] < 0.05:
+    elif camera_view == "side" and metrics["ankle_lift"] < 0.05:
         coaching_items.append(
             build_coaching_item(
                 title="Increase jump lift",
@@ -531,7 +979,7 @@ def build_coaching_items(metrics: dict, phases: dict) -> list[dict]:
             )
         )
 
-    if metrics["min_knee_angle"] > 150:
+    if camera_view == "side" and metrics["min_knee_angle"] > 150:
         coaching_items.append(
             build_coaching_item(
                 title="Load the knees more before rising",
@@ -546,7 +994,7 @@ def build_coaching_items(metrics: dict, phases: dict) -> list[dict]:
                 end_frame=dip_load_phase[2],
             )
         )
-    elif metrics["min_knee_angle"] > 130:
+    elif camera_view == "side" and metrics["min_knee_angle"] > 130:
         coaching_items.append(
             build_coaching_item(
                 title="Get slightly deeper in the load",
@@ -744,7 +1192,8 @@ def calculate_release_confidence(
     return confidence, label_confidence(confidence)
 
 
-def analyze_shot(features_csv_path: str) -> dict:
+def analyze_shot(features_csv_path: str, camera_view: str = "side") -> dict:
+    camera_view = normalize_camera_view(camera_view)
     path = resolve_features_path(features_csv_path)
     df = pd.read_csv(path).dropna()
 
@@ -769,6 +1218,7 @@ def analyze_shot(features_csv_path: str) -> dict:
     leg_drive = measure_leg_drive(df, release_frame, shooting_side)
     jump = measure_jump(df, release_frame)
     phases = detect_phases(df, release_frame, leg_drive, follow_through)
+    alignment = measure_alignment(df, shooting_side, release_frame) if camera_view in {"front", "back"} else {}
     release_confidence, release_confidence_label = calculate_release_confidence(
         df,
         shooting_side,
@@ -784,16 +1234,42 @@ def analyze_shot(features_csv_path: str) -> dict:
     follow_through_score, follow_through_feedback = score_follow_through(follow_through["follow_through_frames"])
     leg_drive_score, leg_drive_feedback = score_leg_drive(leg_drive["hip_rise"])
     jump_score, jump_feedback = score_jump(jump["ankle_lift"])
+    alignment_score, alignment_feedback = score_alignment(alignment) if alignment else (0, [])
 
-    score = (
-        elbow_score
-        + knee_score
-        + consistency_score
-        + release_score
-        + follow_through_score
-        + leg_drive_score
-        + jump_score
-    )
+    if camera_view == "side":
+        score = (
+            elbow_score
+            + knee_score
+            + consistency_score
+            + release_score
+            + follow_through_score
+            + leg_drive_score
+            + jump_score
+        )
+        feedback = [
+            elbow_feedback,
+            knee_feedback,
+            consistency_feedback,
+            release_feedback,
+            follow_through_feedback,
+            leg_drive_feedback,
+            jump_feedback,
+        ]
+    else:
+        score = (
+            (alignment_score / 75) * 60
+            + release_score
+            + follow_through_score
+            + min(10, consistency_score)
+            + min(10, elbow_score)
+        )
+        feedback = [
+            f"{camera_view.title()} view selected: grading emphasizes alignment metrics visible from this camera angle.",
+            *alignment_feedback,
+            release_feedback,
+            follow_through_feedback,
+            consistency_feedback,
+        ]
     score = max(0, min(100, round(score)))
 
     metrics = {
@@ -811,23 +1287,17 @@ def analyze_shot(features_csv_path: str) -> dict:
         **follow_through,
         **leg_drive,
         **jump,
+        **alignment,
     }
 
     return {
         "score": score,
         "shooting_side": shooting_side,
+        "camera_view": camera_view,
         "metrics": metrics,
         "phases": phases,
-        "feedback": [
-            elbow_feedback,
-            knee_feedback,
-            consistency_feedback,
-            release_feedback,
-            follow_through_feedback,
-            leg_drive_feedback,
-            jump_feedback,
-        ],
-        "coaching_items": build_coaching_items(metrics, phases),
+        "feedback": feedback,
+        "coaching_items": build_coaching_items(metrics, phases, camera_view),
     }
 
 
@@ -837,6 +1307,7 @@ def print_report(analysis: dict) -> None:
     print("Shot Analysis")
     print(f"Score: {analysis['score']}/100")
     print(f"Shooting side: {analysis['shooting_side']}")
+    print(f"Camera view: {analysis['camera_view']}")
     print()
     print("Metrics:")
     print(f"- Max elbow angle: {metrics['max_elbow_angle']:.1f}")
@@ -870,6 +1341,18 @@ def print_report(analysis: dict) -> None:
     if metrics["ankle_baseline_y"] is not None:
         print(f"- Ankle lift estimate: {metrics['ankle_lift']:.3f}")
         print(f"- Jump window: {metrics['jump_window_start']}-{metrics['jump_window_end']}")
+    if "arm_stack_error" in metrics:
+        print(f"- Left shin vertical error: {metrics['left_shin_vertical_error']:.1f} deg" if metrics["left_shin_vertical_error"] is not None else "- Left shin vertical error: N/A")
+        print(f"- Right shin vertical error: {metrics['right_shin_vertical_error']:.1f} deg" if metrics["right_shin_vertical_error"] is not None else "- Right shin vertical error: N/A")
+        print(f"- Shin parallel error: {metrics['shin_parallel_error']:.1f} deg" if metrics["shin_parallel_error"] is not None else "- Shin parallel error: N/A")
+        print(f"- Foot parallel error: {metrics['foot_parallel_error']:.1f} deg" if metrics["foot_parallel_error"] is not None else "- Foot parallel error: N/A")
+        print(f"- Forearm vertical error: {metrics['forearm_vertical_error']:.1f} deg" if metrics["forearm_vertical_error"] is not None else "- Forearm vertical error: N/A")
+        print(f"- Follow-through line vertical error: {metrics['follow_through_vertical_error']:.1f} deg" if metrics["follow_through_vertical_error"] is not None else "- Follow-through line vertical error: N/A")
+        print(f"- Arm stack error: {metrics['arm_stack_error']:.3f}" if metrics["arm_stack_error"] is not None else "- Arm stack error: N/A")
+        print(f"- Knee-to-ankle alignment error: {metrics['knee_to_ankle_alignment_error']:.3f}")
+        print(f"- Leg symmetry error: {metrics['leg_symmetry_error']:.3f}")
+        print(f"- Shoulder level delta: {metrics['shoulder_level_delta']:.3f}")
+        print(f"- Body lean: {metrics['body_lean']:.3f}")
     print()
     print("Phases:")
     for phase_name, phase in analysis["phases"].items():
@@ -887,9 +1370,10 @@ def print_report(analysis: dict) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Analyze a basketball shot from extracted features.")
     parser.add_argument("features_csv_path", help="Path to a features CSV, for example data/ft1_features.csv")
+    parser.add_argument("--camera-view", choices=["side", "front", "back"], default="side", help="Camera angle used for view-specific scoring")
     args = parser.parse_args()
 
-    analysis = analyze_shot(args.features_csv_path)
+    analysis = analyze_shot(args.features_csv_path, camera_view=args.camera_view)
     print_report(analysis)
 
 

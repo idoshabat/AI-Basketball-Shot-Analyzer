@@ -6,7 +6,7 @@ import sys
 import time
 
 import numpy as np
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -28,6 +28,7 @@ DEFAULT_ANALYSIS_RETENTION_DAYS = 7
 sys.path.insert(0, str(SRC_DIR))
 
 from analyze_video import ANALYSIS_VERSION, analyze_video, create_analysis_run, format_path
+from shot_analyzer import normalize_camera_view
 
 
 def get_cors_origins() -> list[str]:
@@ -203,6 +204,7 @@ def build_saved_analysis_response(report: dict) -> dict:
             "analysis_version": report.get("analysis_version"),
             "score": report.get("score"),
             "shooting_side": report.get("shooting_side"),
+            "camera_view": report.get("camera_view", "side"),
             "video_metadata": report.get("video_metadata"),
             "metrics": report.get("metrics", {}),
             "phases": report.get("phases", {}),
@@ -243,6 +245,7 @@ def summarize_report(report: dict) -> dict:
             "created_at": parse_run_created_at(run_id or ""),
             "score": report.get("score"),
             "shooting_side": report.get("shooting_side"),
+            "camera_view": report.get("camera_view", "side"),
             "video": Path(files.get("original_video", "original.mp4")).name,
             "report_url": output_urls.get("json_report"),
             "chart_url": output_urls.get("angles_chart"),
@@ -381,8 +384,17 @@ async def analyze_shot_endpoint(
     save_chart: bool = True,
     save_annotated_video: bool = True,
     save_report: bool = True,
+    camera_view: str = "side",
+    camera_view_form: str | None = Form(default=None, alias="camera_view"),
+    x_camera_view: str | None = Header(default=None),
 ) -> dict:
     validate_video_file(file)
+    try:
+        camera_view = x_camera_view or camera_view_form or camera_view
+        camera_view = normalize_camera_view(camera_view)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     run_paths = create_analysis_run(file.filename or "uploaded-video.mp4")
     upload_path = run_paths["input_video"]
 
@@ -399,6 +411,7 @@ async def analyze_shot_endpoint(
             save_annotated_video=save_annotated_video,
             save_json_report=save_report,
             display=False,
+            camera_view=camera_view,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -408,6 +421,7 @@ async def analyze_shot_endpoint(
         "analysis_version": ANALYSIS_VERSION,
         "score": result["analysis"]["score"],
         "shooting_side": result["analysis"]["shooting_side"],
+        "camera_view": result["analysis"]["camera_view"],
         "video_metadata": result["video_metadata"],
         "metrics": result["analysis"]["metrics"],
         "phases": result["analysis"]["phases"],

@@ -61,19 +61,20 @@ def draw_overlay(frame, frame_number: int, analysis: dict) -> None:
 
     draw_text(frame, f"Frame: {frame_number}", (12, 28))
     draw_text(frame, f"Score: {analysis['score']}/100", (12, 56))
-    draw_text(frame, f"Release: {release_frame}", (12, 84))
-    draw_text(frame, f"Method: {metrics['release_detection_method']}", (12, 112), scale=0.5)
+    draw_text(frame, f"View: {analysis['camera_view'].title()}", (12, 84))
+    draw_text(frame, f"Release: {release_frame}", (12, 112))
+    draw_text(frame, f"Method: {metrics['release_detection_method']}", (12, 140), scale=0.5)
     draw_text(
         frame,
         f"Release conf: {metrics['release_confidence']:.2f} ({metrics['release_confidence_label']})",
-        (12, 140),
+        (12, 168),
         scale=0.5,
     )
-    draw_text(frame, f"Wrist vel: {metrics['release_wrist_y_velocity']:.3f}", (12, 168), scale=0.5)
-    draw_text(frame, f"Phase: {current_phase.replace('_', ' ').title()}", (12, 196), scale=0.5)
-    draw_text(frame, f"FT hold: {metrics['follow_through_frames']} frames", (12, 224), scale=0.5)
-    draw_text(frame, f"Hip rise: {metrics['hip_rise']:.3f}", (12, 252), scale=0.5)
-    draw_text(frame, f"Ankle lift: {metrics['ankle_lift']:.3f}", (12, 280), scale=0.5)
+    draw_text(frame, f"Wrist vel: {metrics['release_wrist_y_velocity']:.3f}", (12, 196), scale=0.5)
+    draw_text(frame, f"Phase: {current_phase.replace('_', ' ').title()}", (12, 224), scale=0.5)
+    draw_text(frame, f"FT hold: {metrics['follow_through_frames']} frames", (12, 252), scale=0.5)
+    draw_text(frame, f"Hip rise: {metrics['hip_rise']:.3f}", (12, 280), scale=0.5)
+    draw_text(frame, f"Ankle lift: {metrics['ankle_lift']:.3f}", (12, 308), scale=0.5)
 
     if frame_number == release_frame:
         draw_banner(
@@ -93,9 +94,14 @@ def draw_overlay(frame, frame_number: int, analysis: dict) -> None:
         draw_banner(frame, current_phase.replace("_", " ").upper(), (80, 80, 80))
 
 
-def annotate_video(video_path: str, features_csv_path: str, output_path: str | None = None) -> Path:
+def annotate_video(
+    video_path: str,
+    features_csv_path: str,
+    output_path: str | None = None,
+    camera_view: str = "side",
+) -> Path:
     path = resolve_video_path(video_path)
-    analysis = analyze_shot(features_csv_path)
+    analysis = analyze_shot(features_csv_path, camera_view=camera_view)
     annotated_path = Path(output_path) if output_path else build_annotated_video_path(path)
 
     cap = cv2.VideoCapture(str(path))
@@ -130,9 +136,10 @@ def main() -> None:
     parser.add_argument("video_path", help="Path to a video file, for example videos/ft1.mp4")
     parser.add_argument("features_csv_path", help="Path to a features CSV, for example data/ft1_features.csv")
     parser.add_argument("--output", help="Optional output video path")
+    parser.add_argument("--camera-view", choices=["side", "front", "back"], default="side", help="Camera angle used for view-specific overlays")
     args = parser.parse_args()
 
-    output_path = annotate_video(args.video_path, args.features_csv_path, args.output)
+    output_path = annotate_video(args.video_path, args.features_csv_path, args.output, camera_view=args.camera_view)
     print(f"Saved annotated video: {output_path}")
 
 
