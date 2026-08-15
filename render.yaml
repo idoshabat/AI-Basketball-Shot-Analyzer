@@ -8,7 +8,19 @@ services:
     healthCheckPath: /health
     autoDeploy: true
     envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
       - key: CORS_ORIGINS
         value: https://ai-basketball-shot-analyzer.vercel.app,https://ai-basketball-shot-analyzer-edb2.vercel.app
       - key: CORS_ORIGIN_REGEX
         value: https://.*\.vercel\.app|http://127\.0\.0\.1:5173|http://localhost:5173
+      - key: SUPABASE_ANALYSES_TABLE
+        value: analyses
+      - key: SUPABASE_STORAGE_BUCKET
+        value: shot-analyses

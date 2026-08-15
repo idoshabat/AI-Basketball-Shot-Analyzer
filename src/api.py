@@ -36,6 +36,7 @@ sys.path.insert(0, str(SRC_DIR))
 
 from analyze_video import ANALYSIS_VERSION, analyze_video, create_analysis_run, format_path
 from shot_analyzer import normalize_camera_view
+import supabase_store
 
 
 def get_cors_origins() -> list[str]:
@@ -240,6 +241,12 @@ def build_urls_from_files(files: dict) -> dict:
     return output_urls
 
 
+def build_output_urls(report: dict, files: dict) -> dict:
+    output_urls = build_urls_from_files(files)
+    output_urls.update(report.get("output_urls", {}))
+    return output_urls
+
+
 def get_report_path(run_id: str) -> Path:
     report_path = STORAGE_DIR / "analyses" / run_id / "report.json"
     try:
@@ -266,7 +273,7 @@ def get_run_dir(run_id: str) -> Path:
     return run_dir
 
 
-def load_report(run_id: str) -> dict:
+def load_local_report(run_id: str) -> dict:
     report_path = get_report_path(run_id)
     with report_path.open() as report_file:
         return json.load(report_file)
@@ -283,6 +290,37 @@ def load_saved_reports() -> list[dict]:
             reports.append(json.load(report_file))
 
     return reports
+
+
+def hydrate_supabase_report(report: dict) -> dict:
+    if report.get("storage_files"):
+        return supabase_store.add_signed_output_urls(report)
+
+    return report
+
+
+def load_reports_for_user(user_id: str, limit: int | None = None) -> list[dict]:
+    if supabase_store.is_configured():
+        reports = supabase_store.list_reports(user_id, limit or 20)
+        return [hydrate_supabase_report(report) for report in reports]
+
+    reports = [report for report in load_saved_reports() if report_belongs_to_user(report, user_id)]
+    return sorted(reports, key=lambda report: report.get("run_id", ""), reverse=True)
+
+
+def load_report_for_user(run_id: str, user_id: str) -> dict:
+    if supabase_store.is_configured():
+        report = supabase_store.load_report(run_id, user_id)
+        if not report:
+            raise HTTPException(status_code=404, detail="Analysis run not found.")
+
+        return hydrate_supabase_report(report)
+
+    report = load_local_report(run_id)
+    if not report_belongs_to_user(report, user_id):
+        raise HTTPException(status_code=404, detail="Analysis run not found.")
+
+    return report
 
 
 def build_saved_analysis_response(report: dict) -> dict:
@@ -308,7 +346,7 @@ def build_saved_analysis_response(report: dict) -> dict:
             "feedback": report.get("feedback", []),
             "coaching_items": report.get("coaching_items", []),
             "files": files,
-            "output_urls": build_urls_from_files(files),
+            "output_urls": build_output_urls(report, files),
         }
     )
 
@@ -333,7 +371,7 @@ def summarize_report(report: dict) -> dict:
         debug_path = STORAGE_DIR / "analyses" / report["run_id"] / "output" / "follow_through_debug.png"
         if debug_path.exists():
             files["follow_through_debug_chart"] = format_path(debug_path)
-    output_urls = build_urls_from_files(files)
+    output_urls = build_output_urls(report, files)
     run_id = report.get("run_id")
 
     return make_json_safe(
@@ -430,17 +468,14 @@ def health_check() -> dict:
             os.getenv("SUPABASE_JWT_SECRET")
             or (os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_ANON_KEY"))
         ),
+        "persistence": "supabase" if supabase_store.is_configured() else "local",
     }
 
 
 @app.get("/analyses")
 def list_analyses(limit: int = 20, authorization: str | None = Header(default=None)) -> list[dict]:
     user_id = get_request_user_id(authorization)
-    reports = sorted(
-        [report for report in load_saved_reports() if report_belongs_to_user(report, user_id)],
-        key=lambda report: report.get("run_id", ""),
-        reverse=True,
-    )
+    reports = load_reports_for_user(user_id, limit)
     summaries = []
 
     for report in reports[: max(1, min(limit, 100))]:
@@ -455,10 +490,8 @@ def compare_analyses(run_a: str, run_b: str, authorization: str | None = Header(
         raise HTTPException(status_code=400, detail="Choose two different analysis runs.")
 
     user_id = get_request_user_id(authorization)
-    first_report = load_report(run_a)
-    second_report = load_report(run_b)
-    if not report_belongs_to_user(first_report, user_id) or not report_belongs_to_user(second_report, user_id):
-        raise HTTPException(status_code=404, detail="Analysis run not found.")
+    first_report = load_report_for_user(run_a, user_id)
+    second_report = load_report_for_user(run_b, user_id)
 
     return compare_reports(first_report, second_report)
 
@@ -466,14 +499,12 @@ def compare_analyses(run_a: str, run_b: str, authorization: str | None = Header(
 @app.get("/analyses/{run_id}/compare-best")
 def compare_analysis_to_best(run_id: str, authorization: str | None = Header(default=None)) -> dict:
     user_id = get_request_user_id(authorization)
-    current_report = load_report(run_id)
-    if not report_belongs_to_user(current_report, user_id):
-        raise HTTPException(status_code=404, detail="Analysis run not found.")
+    current_report = load_report_for_user(run_id, user_id)
 
     candidates = [
         report
-        for report in load_saved_reports()
-        if report.get("run_id") != run_id and report_belongs_to_user(report, user_id)
+        for report in load_reports_for_user(user_id, 100)
+        if report.get("run_id") != run_id
     ]
 
     if not candidates:
@@ -491,9 +522,7 @@ def compare_analysis_to_best(run_id: str, authorization: str | None = Header(def
 @app.get("/analyses/{run_id}")
 def get_analysis(run_id: str, authorization: str | None = Header(default=None)) -> dict:
     user_id = get_request_user_id(authorization)
-    report = load_report(run_id)
-    if not report_belongs_to_user(report, user_id):
-        raise HTTPException(status_code=404, detail="Analysis run not found.")
+    report = load_report_for_user(run_id, user_id)
 
     return build_saved_analysis_response(report)
 
@@ -501,7 +530,13 @@ def get_analysis(run_id: str, authorization: str | None = Header(default=None)) 
 @app.delete("/analyses/{run_id}")
 def delete_analysis(run_id: str, authorization: str | None = Header(default=None)) -> dict:
     user_id = get_request_user_id(authorization)
-    report = load_report(run_id)
+    if supabase_store.is_configured():
+        if not supabase_store.delete_report(run_id, user_id):
+            raise HTTPException(status_code=404, detail="Analysis run not found.")
+
+        return {"deleted": True, "run_id": run_id}
+
+    report = load_local_report(run_id)
     if not report_belongs_to_user(report, user_id):
         raise HTTPException(status_code=404, detail="Analysis run not found.")
 
@@ -564,7 +599,19 @@ async def analyze_shot_endpoint(
         "phases": result["analysis"]["phases"],
         "feedback": result["analysis"]["feedback"],
         "coaching_items": result["analysis"]["coaching_items"],
+        "persistence": "local",
     }
     response.update(build_file_response(result))
+
+    if save_report and supabase_store.is_configured():
+        try:
+            with Path(result["report_path"]).open() as report_file:
+                report = json.load(report_file)
+            persisted_report = supabase_store.persist_report(report)
+            response["persistence"] = "supabase"
+            response["files"] = persisted_report.get("files", response["files"])
+            response["output_urls"] = build_output_urls(persisted_report, response["files"])
+        except supabase_store.SupabaseStoreError as exc:
+            response["persistence_warning"] = str(exc)
 
     return make_json_safe(response)

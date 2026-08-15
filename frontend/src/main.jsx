@@ -105,6 +105,12 @@ function getUserName(session) {
   return session?.user?.user_metadata?.full_name || session?.user?.email || "Signed-in player";
 }
 
+function formatElapsedTime(totalSeconds) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
 function App() {
   const [file, setFile] = useState(null);
   const [cameraView, setCameraView] = useState("side");
@@ -115,6 +121,7 @@ function App() {
   const [comparison, setComparison] = useState(null);
   const [error, setError] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisElapsedSeconds, setAnalysisElapsedSeconds] = useState(0);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isComparing, setIsComparing] = useState(false);
   const [isComparingBest, setIsComparingBest] = useState(false);
@@ -361,6 +368,18 @@ function App() {
     }
   }, [isAuthReady, hasEnteredApp, session?.access_token]);
 
+  useEffect(() => {
+    if (!isAnalyzing) {
+      return undefined;
+    }
+
+    const timerId = window.setInterval(() => {
+      setAnalysisElapsedSeconds((currentSeconds) => currentSeconds + 1);
+    }, 1000);
+
+    return () => window.clearInterval(timerId);
+  }, [isAnalyzing]);
+
   async function signInWithGoogle() {
     if (!supabase) {
       setError("Supabase is not configured yet.");
@@ -414,6 +433,7 @@ function App() {
     }
 
     const selectedCameraView = event.currentTarget.elements.camera_view?.value || cameraView;
+    setAnalysisElapsedSeconds(0);
     setIsAnalyzing(true);
     setError("");
     setResult(null);
@@ -590,6 +610,14 @@ function App() {
               <span>Compare shots only when they were filmed from the same camera angle.</span>
             </div>
 
+            <div className="capture-guidance">
+              <strong>For the best result</strong>
+              <p>
+                Film one player only, keep the full body visible, use good lighting and video quality, and keep the camera
+                steady from the selected angle.
+              </p>
+            </div>
+
             <label className="toggle-row">
               <input
                 type="checkbox"
@@ -618,7 +646,13 @@ function App() {
           <section className="loading-panel" aria-live="polite">
             <div className="loading-spinner" aria-hidden="true" />
             <div>
-              <h2>Analyzing your shot</h2>
+              <div className="loading-header">
+                <h2>Analyzing your shot</h2>
+                <div className="elapsed-timer" aria-live="polite">
+                  <span>Running time</span>
+                  <strong>{formatElapsedTime(analysisElapsedSeconds)}</strong>
+                </div>
+              </div>
               <p>
                 The backend is processing pose detection, metrics, charts, and optional annotated video. This can take a few
                 minutes on Render's low-CPU instance. Camera view: {titleCase(cameraView)}.

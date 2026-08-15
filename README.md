@@ -15,7 +15,7 @@ The goal of this project is not just to detect pose landmarks. It behaves like a
 - Generate rule-based coaching feedback and a shot score.
 - Show priority improvement cards with target metrics and drills.
 - Generate charts and optional annotated video.
-- Save analysis runs for later review.
+- Save analysis runs for later review with Supabase persistence when configured.
 - Compare two saved shots manually.
 - Compare the current shot to the best saved shot automatically.
 - Choose the camera view before analysis so scoring uses metrics that are actually visible from that angle.
@@ -52,7 +52,7 @@ Video upload
 
 ## Example Output
 
-A saved analysis includes:
+During local analysis, the backend still creates a working run folder:
 
 ```text
 storage/analyses/<run_id>/
@@ -61,9 +61,15 @@ storage/analyses/<run_id>/
   data/features.csv
   output/angles.png
   output/follow_through_debug.png
-  output/annotated.mp4
+  output/annotated.webm
   report.json
 ```
+
+In deployed mode, Supabase becomes the persistent source of truth:
+
+- Supabase Postgres stores the analysis report, score, metadata, metrics, feedback, and owner user id.
+- Supabase Storage stores the original video, keypoint/features CSVs, charts, annotated video, and report JSON.
+- The API returns signed Storage URLs for saved media so Vercel and Render are no longer dependent on Render's temporary filesystem.
 
 A compact sample result is available at [samples/sample-analysis.json](samples/sample-analysis.json), and the frontend demo data lives at `frontend/public/samples/sample-analysis.json`. The sample annotated video is served from `frontend/public/samples/sample-annotated.webm`.
 
@@ -139,11 +145,18 @@ The backend verifies Supabase JWTs when this env var exists:
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-supabase-anon-key
 SUPABASE_JWT_SECRET=your-supabase-jwt-secret
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
+SUPABASE_ANALYSES_TABLE=analyses
+SUPABASE_STORAGE_BUCKET=shot-analyses
 ```
 
 `SUPABASE_URL` and `SUPABASE_ANON_KEY` are required for newer Supabase projects that use asymmetric JWT signing keys such as `ES256` or `RS256`.
 
-If Supabase is not configured, the app runs in `Guest mode`. If it is configured, users can sign in with Google and their saved analyses, comparisons, and best-shot history are scoped to their account.
+`SUPABASE_SERVICE_ROLE_KEY` is required only on the backend. Keep it secret and set it in Render, never in Vercel. The backend uses it to write reports to Postgres and upload analysis files to Supabase Storage.
+
+Create the required table and storage bucket by running [supabase/schema.sql](supabase/schema.sql) in the Supabase SQL editor.
+
+If Supabase is not configured, the app runs in `Guest mode` with local filesystem persistence. If it is configured, users can sign in with Google and their saved analyses, comparisons, and best-shot history are scoped to their account.
 
 For Google sign-in, enable the Google provider in Supabase Auth and add your local/deployed frontend URLs to the allowed redirect URLs.
 
