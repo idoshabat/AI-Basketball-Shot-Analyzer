@@ -22,6 +22,8 @@ const CAMERA_VIEW_GUIDANCE = {
   },
 };
 
+const ACCESS_MODE_STORAGE_KEY = "shotAnalyzerAccessMode";
+
 function formatMetric(value, digits = 2) {
   if (value === null || value === undefined) {
     return "N/A";
@@ -119,6 +121,12 @@ function App() {
   const [session, setSession] = useState(null);
   const [isAuthReady, setIsAuthReady] = useState(!isSupabaseConfigured);
   const [isSigningIn, setIsSigningIn] = useState(false);
+  const [hasEnteredApp, setHasEnteredApp] = useState(() => {
+    return window.localStorage.getItem(ACCESS_MODE_STORAGE_KEY) === "guest";
+  });
+  const [isGuestMode, setIsGuestMode] = useState(() => {
+    return window.localStorage.getItem(ACCESS_MODE_STORAGE_KEY) === "guest";
+  });
   const annotatedVideoRef = useRef(null);
   const annotatedVideoSectionRef = useRef(null);
 
@@ -181,7 +189,7 @@ function App() {
   }
 
   async function loadAnalysisHistory() {
-    if (isSupabaseConfigured && !session) {
+    if (!hasEnteredApp) {
       setAnalysisHistory([]);
       return;
     }
@@ -322,6 +330,11 @@ function App() {
 
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
+      if (data.session) {
+        setHasEnteredApp(true);
+        setIsGuestMode(false);
+        window.localStorage.setItem(ACCESS_MODE_STORAGE_KEY, "signed_in");
+      }
       setIsAuthReady(true);
     });
 
@@ -329,6 +342,11 @@ function App() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
+      if (nextSession) {
+        setHasEnteredApp(true);
+        setIsGuestMode(false);
+        window.localStorage.setItem(ACCESS_MODE_STORAGE_KEY, "signed_in");
+      }
       setSelectedComparisonRuns([]);
       setComparison(null);
       setResult(null);
@@ -338,10 +356,10 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (isAuthReady) {
+    if (isAuthReady && hasEnteredApp) {
       loadAnalysisHistory();
     }
-  }, [isAuthReady, session?.access_token]);
+  }, [isAuthReady, hasEnteredApp, session?.access_token]);
 
   async function signInWithGoogle() {
     if (!supabase) {
@@ -371,12 +389,22 @@ function App() {
 
     setError("");
     await supabase.auth.signOut();
+    setHasEnteredApp(false);
+    setIsGuestMode(false);
+    window.localStorage.removeItem(ACCESS_MODE_STORAGE_KEY);
+  }
+
+  function continueAsGuest() {
+    setError("");
+    setHasEnteredApp(true);
+    setIsGuestMode(true);
+    window.localStorage.setItem(ACCESS_MODE_STORAGE_KEY, "guest");
   }
 
   async function analyzeShot(event) {
     event.preventDefault();
-    if (isSupabaseConfigured && !session) {
-      setError("Sign in with Google before analyzing so the shot is saved to your account.");
+    if (!hasEnteredApp) {
+      setError("Choose sign in or continue as guest before analyzing.");
       return;
     }
 
@@ -456,6 +484,41 @@ function App() {
   return (
     <main className="app-shell">
       <section className="workspace">
+        {isAuthReady && !hasEnteredApp && !session ? (
+          <section className="welcome-panel">
+            <div className="welcome-copy">
+              <p className="eyebrow">AI Basketball Shot Analyzer</p>
+              <h1>Train your jumper with motion data.</h1>
+              <p>
+                Upload a shot, choose the camera angle, and get a clean report with score, priorities, charts, and an
+                annotated video.
+              </p>
+              <div className="welcome-highlights">
+                <span>Pose tracking</span>
+                <span>Camera-aware feedback</span>
+                <span>Saved comparisons</span>
+              </div>
+            </div>
+
+            <div className="welcome-actions">
+              <div>
+                <strong>Start analyzing</strong>
+                <span>Sign in to keep your shot history, or try the app as a guest.</span>
+              </div>
+              <button type="button" onClick={signInWithGoogle} disabled={!isSupabaseConfigured || isSigningIn}>
+                {isSigningIn ? "Opening Google..." : "Sign in with Google"}
+              </button>
+              <button className="sample-button" type="button" onClick={continueAsGuest}>
+                Continue as guest
+              </button>
+              {!isSupabaseConfigured && (
+                <p className="processing-note">Google sign-in needs Supabase env vars. Guest mode is available now.</p>
+              )}
+              {error && <p className="error-text">{error}</p>}
+            </div>
+          </section>
+        ) : (
+          <>
         <div className="upload-panel">
           <div>
             <p className="eyebrow">AI Basketball Shot Analyzer</p>
@@ -470,6 +533,16 @@ function App() {
                     </div>
                     <button className="secondary-button" type="button" onClick={signOut}>
                       Sign Out
+                    </button>
+                  </>
+                ) : isGuestMode ? (
+                  <>
+                    <div>
+                      <strong>Guest session</strong>
+                      <span>This analysis will not be attached to a personal account.</span>
+                    </div>
+                    <button className="secondary-button" type="button" onClick={signInWithGoogle} disabled={isSigningIn}>
+                      {isSigningIn ? "Opening Google..." : "Sign in"}
                     </button>
                   </>
                 ) : (
@@ -817,6 +890,8 @@ function App() {
               </section>
             )}
           </div>
+        )}
+          </>
         )}
       </section>
     </main>

@@ -112,6 +112,88 @@ button:disabled {
   margin: 0 auto;
 }
 
+.welcome-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 390px);
+  gap: 28px;
+  align-items: end;
+  min-height: calc(100vh - 68px);
+  padding: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background:
+    linear-gradient(120deg, rgba(12, 14, 18, 0.98), rgba(12, 14, 18, 0.66) 58%, rgba(12, 14, 18, 0.92)),
+    linear-gradient(30deg, rgba(240, 100, 47, 0.22), transparent 34%),
+    linear-gradient(160deg, transparent 58%, rgba(201, 255, 87, 0.14));
+  box-shadow: var(--shadow);
+}
+
+.welcome-copy {
+  display: grid;
+  gap: 18px;
+  max-width: 760px;
+}
+
+.welcome-copy h1 {
+  max-width: 760px;
+  font-size: clamp(48px, 7vw, 94px);
+}
+
+.welcome-copy p {
+  max-width: 610px;
+  margin: 0;
+  color: #d4dde7;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.welcome-highlights {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.welcome-highlights span {
+  padding: 9px 12px;
+  border: 1px solid rgba(245, 239, 228, 0.2);
+  border-radius: 8px;
+  background: rgba(245, 239, 228, 0.08);
+  color: var(--cream);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.welcome-actions {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid rgba(245, 239, 228, 0.36);
+  border-left: 4px solid var(--lime);
+  border-radius: 8px;
+  background: rgba(245, 239, 228, 0.94);
+  color: var(--ink);
+  backdrop-filter: blur(10px);
+}
+
+.welcome-actions div {
+  display: grid;
+  gap: 4px;
+}
+
+.welcome-actions strong {
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 950;
+}
+
+.welcome-actions span {
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 750;
+}
+
 .upload-panel,
 .loading-panel,
 .history-panel,
@@ -1000,6 +1082,20 @@ h2 {
   .upload-panel {
     min-height: auto;
     padding: 22px;
+  }
+
+  .welcome-panel {
+    grid-template-columns: 1fr;
+    min-height: calc(100vh - 32px);
+    padding: 24px;
+  }
+
+  .welcome-copy h1 {
+    font-size: clamp(42px, 15vw, 64px);
+  }
+
+  .welcome-copy p {
+    font-size: 16px;
   }
 
   .upload-panel,
