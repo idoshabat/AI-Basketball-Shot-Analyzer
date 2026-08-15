@@ -17,6 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = PROJECT_ROOT / "output"
 STORAGE_DIR = PROJECT_ROOT / "storage"
 ANALYSES_DIR = STORAGE_DIR / "analyses"
+ANALYSIS_VERSION = "rule-based-mvp-2026-08-15"
 
 
 def slugify(value: str) -> str:
@@ -44,7 +45,7 @@ def create_analysis_run(video_path: str, run_dir: str | Path | None = None) -> d
         "pose_video": run_path / "output" / "pose.mp4",
         "angles_chart": run_path / "output" / "angles.png",
         "follow_through_debug_chart": run_path / "output" / "follow_through_debug.png",
-        "annotated_video": run_path / "output" / "annotated.mp4",
+        "annotated_video": run_path / "output" / "annotated.webm",
         "report": run_path / "report.json",
     }
 
@@ -73,6 +74,7 @@ def save_report(video_path: str, result: dict, report_path: str | Path | None = 
     report_path = Path(report_path) if report_path else build_report_path(video_path)
     report = {
         "run_id": result["run_id"],
+        "analysis_version": ANALYSIS_VERSION,
         "run_dir": format_path(result["run_dir"]),
         "video": format_path(Path(video_path)),
         "score": result["analysis"]["score"],

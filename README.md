@@ -213,6 +213,15 @@ The frontend is designed for Vercel. The backend can run on Render using `render
 
 Render free or very small CPU instances can be slow for video analysis. A full request may take a few minutes because the backend runs pose detection frame by frame and may also generate annotated video. The frontend includes a visible loading state and a note explaining this delay.
 
+If local and deployed scores differ for the same video, first verify that both environments are running the same backend version:
+
+```bash
+curl http://127.0.0.1:8000/health
+curl https://ai-basketball-shot-analyzer.onrender.com/health
+```
+
+Both responses should show the same `analysis_version`. If they do not, redeploy the Render backend. The frontend on Vercel only controls the browser UI; the scoring result comes from whichever FastAPI backend it is configured to call.
+
 For a faster hosted demo:
 
 - Disable annotated video by default for public demos, or

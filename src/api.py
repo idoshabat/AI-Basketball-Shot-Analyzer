@@ -27,7 +27,7 @@ DEFAULT_ANALYSIS_RETENTION_DAYS = 7
 
 sys.path.insert(0, str(SRC_DIR))
 
-from analyze_video import analyze_video, create_analysis_run, format_path
+from analyze_video import ANALYSIS_VERSION, analyze_video, create_analysis_run, format_path
 
 
 def get_cors_origins() -> list[str]:
@@ -200,6 +200,7 @@ def build_saved_analysis_response(report: dict) -> dict:
     return make_json_safe(
         {
             "run_id": report.get("run_id"),
+            "analysis_version": report.get("analysis_version"),
             "score": report.get("score"),
             "shooting_side": report.get("shooting_side"),
             "video_metadata": report.get("video_metadata"),
@@ -322,7 +323,7 @@ def make_json_safe(value):
 
 @app.get("/health")
 def health_check() -> dict:
-    return {"status": "ok"}
+    return {"status": "ok", "analysis_version": ANALYSIS_VERSION}
 
 
 @app.get("/analyses")
@@ -404,6 +405,7 @@ async def analyze_shot_endpoint(
 
     response = {
         "run_id": result["run_id"],
+        "analysis_version": ANALYSIS_VERSION,
         "score": result["analysis"]["score"],
         "shooting_side": result["analysis"]["shooting_side"],
         "video_metadata": result["video_metadata"],
