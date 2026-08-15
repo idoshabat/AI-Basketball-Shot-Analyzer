@@ -1,4 +1,7 @@
 import os
+import base64
+import hashlib
+import hmac
 import json
 from pathlib import Path
 import shutil
@@ -24,6 +27,7 @@ DEFAULT_CORS_ORIGINS = [
     "https://ai-basketball-shot-analyzer-edb2.vercel.app",
 ]
 DEFAULT_ANALYSIS_RETENTION_DAYS = 7
+GUEST_USER_ID = "guest"
 
 sys.path.insert(0, str(SRC_DIR))
 
@@ -48,6 +52,57 @@ def get_analysis_retention_days() -> int:
         return max(0, int(raw_value))
     except ValueError:
         return DEFAULT_ANALYSIS_RETENTION_DAYS
+
+
+def decode_base64url(value: str) -> bytes:
+    padded_value = value + "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode(padded_value.encode())
+
+
+def verify_supabase_jwt(token: str) -> dict:
+    jwt_secret = os.getenv("SUPABASE_JWT_SECRET")
+    if not jwt_secret:
+        return {"sub": GUEST_USER_ID}
+
+    try:
+        header_part, payload_part, signature_part = token.split(".")
+        header = json.loads(decode_base64url(header_part))
+        payload = json.loads(decode_base64url(payload_part))
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=401, detail="Invalid auth token.") from exc
+
+    if header.get("alg") != "HS256":
+        raise HTTPException(status_code=401, detail="Unsupported auth token algorithm.")
+
+    signed_content = f"{header_part}.{payload_part}".encode()
+    expected_signature = hmac.new(jwt_secret.encode(), signed_content, hashlib.sha256).digest()
+    actual_signature = decode_base64url(signature_part)
+    if not hmac.compare_digest(expected_signature, actual_signature):
+        raise HTTPException(status_code=401, detail="Invalid auth token signature.")
+
+    expires_at = payload.get("exp")
+    if isinstance(expires_at, (int, float)) and expires_at < time.time():
+        raise HTTPException(status_code=401, detail="Auth token expired.")
+
+    if not payload.get("sub"):
+        raise HTTPException(status_code=401, detail="Auth token is missing a user id.")
+
+    return payload
+
+
+def get_request_user_id(authorization: str | None = None) -> str:
+    if not authorization:
+        return GUEST_USER_ID
+
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise HTTPException(status_code=401, detail="Invalid authorization header.")
+
+    return verify_supabase_jwt(token)["sub"]
+
+
+def report_belongs_to_user(report: dict, user_id: str) -> bool:
+    return report.get("owner_user_id", GUEST_USER_ID) == user_id
 
 
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -327,12 +382,21 @@ def make_json_safe(value):
 
 @app.get("/health")
 def health_check() -> dict:
-    return {"status": "ok", "analysis_version": ANALYSIS_VERSION}
+    return {
+        "status": "ok",
+        "analysis_version": ANALYSIS_VERSION,
+        "auth_configured": bool(os.getenv("SUPABASE_JWT_SECRET")),
+    }
 
 
 @app.get("/analyses")
-def list_analyses(limit: int = 20) -> list[dict]:
-    reports = sorted(load_saved_reports(), key=lambda report: report.get("run_id", ""), reverse=True)
+def list_analyses(limit: int = 20, authorization: str | None = Header(default=None)) -> list[dict]:
+    user_id = get_request_user_id(authorization)
+    reports = sorted(
+        [report for report in load_saved_reports() if report_belongs_to_user(report, user_id)],
+        key=lambda report: report.get("run_id", ""),
+        reverse=True,
+    )
     summaries = []
 
     for report in reports[: max(1, min(limit, 100))]:
@@ -342,17 +406,31 @@ def list_analyses(limit: int = 20) -> list[dict]:
 
 
 @app.get("/analyses/compare")
-def compare_analyses(run_a: str, run_b: str) -> dict:
+def compare_analyses(run_a: str, run_b: str, authorization: str | None = Header(default=None)) -> dict:
     if run_a == run_b:
         raise HTTPException(status_code=400, detail="Choose two different analysis runs.")
 
-    return compare_reports(load_report(run_a), load_report(run_b))
+    user_id = get_request_user_id(authorization)
+    first_report = load_report(run_a)
+    second_report = load_report(run_b)
+    if not report_belongs_to_user(first_report, user_id) or not report_belongs_to_user(second_report, user_id):
+        raise HTTPException(status_code=404, detail="Analysis run not found.")
+
+    return compare_reports(first_report, second_report)
 
 
 @app.get("/analyses/{run_id}/compare-best")
-def compare_analysis_to_best(run_id: str) -> dict:
+def compare_analysis_to_best(run_id: str, authorization: str | None = Header(default=None)) -> dict:
+    user_id = get_request_user_id(authorization)
     current_report = load_report(run_id)
-    candidates = [report for report in load_saved_reports() if report.get("run_id") != run_id]
+    if not report_belongs_to_user(current_report, user_id):
+        raise HTTPException(status_code=404, detail="Analysis run not found.")
+
+    candidates = [
+        report
+        for report in load_saved_reports()
+        if report.get("run_id") != run_id and report_belongs_to_user(report, user_id)
+    ]
 
     if not candidates:
         raise HTTPException(status_code=404, detail="No other saved analyses are available for comparison.")
@@ -367,12 +445,22 @@ def compare_analysis_to_best(run_id: str) -> dict:
 
 
 @app.get("/analyses/{run_id}")
-def get_analysis(run_id: str) -> dict:
-    return build_saved_analysis_response(load_report(run_id))
+def get_analysis(run_id: str, authorization: str | None = Header(default=None)) -> dict:
+    user_id = get_request_user_id(authorization)
+    report = load_report(run_id)
+    if not report_belongs_to_user(report, user_id):
+        raise HTTPException(status_code=404, detail="Analysis run not found.")
+
+    return build_saved_analysis_response(report)
 
 
 @app.delete("/analyses/{run_id}")
-def delete_analysis(run_id: str) -> dict:
+def delete_analysis(run_id: str, authorization: str | None = Header(default=None)) -> dict:
+    user_id = get_request_user_id(authorization)
+    report = load_report(run_id)
+    if not report_belongs_to_user(report, user_id):
+        raise HTTPException(status_code=404, detail="Analysis run not found.")
+
     run_dir = get_run_dir(run_id)
     shutil.rmtree(run_dir)
 
@@ -388,7 +476,9 @@ async def analyze_shot_endpoint(
     camera_view: str = "side",
     camera_view_form: str | None = Form(default=None, alias="camera_view"),
     x_camera_view: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
 ) -> dict:
+    user_id = get_request_user_id(authorization)
     validate_video_file(file)
     try:
         camera_view = x_camera_view or camera_view_form or camera_view
@@ -413,6 +503,7 @@ async def analyze_shot_endpoint(
             save_json_report=save_report,
             display=False,
             camera_view=camera_view,
+            owner_user_id=user_id,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc

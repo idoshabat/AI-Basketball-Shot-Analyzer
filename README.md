@@ -19,6 +19,7 @@ The goal of this project is not just to detect pose landmarks. It behaves like a
 - Compare two saved shots manually.
 - Compare the current shot to the best saved shot automatically.
 - Choose the camera view before analysis so scoring uses metrics that are actually visible from that angle.
+- Sign in with Google through Supabase Auth so saved analyses are scoped to the current user.
 - Load a built-in sample result, including annotated video, from the frontend for quick demos without uploading a file.
 
 ## Demo Flow
@@ -120,6 +121,27 @@ The frontend expects the backend at:
 ```text
 http://127.0.0.1:8000
 ```
+
+## Auth Setup
+
+Authentication is optional for local demos, but required for real per-user history.
+
+The frontend uses Supabase Auth when these Vite env vars exist:
+
+```bash
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+```
+
+The backend verifies Supabase JWTs when this env var exists:
+
+```bash
+SUPABASE_JWT_SECRET=your-supabase-jwt-secret
+```
+
+If Supabase is not configured, the app runs in `Guest mode`. If it is configured, users can sign in with Google and their saved analyses, comparisons, and best-shot history are scoped to their account.
+
+For Google sign-in, enable the Google provider in Supabase Auth and add your local/deployed frontend URLs to the allowed redirect URLs.
 
 ## API
 
@@ -245,6 +267,8 @@ curl https://ai-basketball-shot-analyzer.onrender.com/health
 ```
 
 Both responses should show the same `analysis_version`. If they do not, redeploy the Render backend. The frontend on Vercel only controls the browser UI; the scoring result comes from whichever FastAPI backend it is configured to call.
+
+`/health` also returns `auth_configured`. On Render, it should be `true` once `SUPABASE_JWT_SECRET` is set.
 
 For a faster hosted demo:
 

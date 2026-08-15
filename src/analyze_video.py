@@ -75,6 +75,7 @@ def save_report(video_path: str, result: dict, report_path: str | Path | None = 
     report = {
         "run_id": result["run_id"],
         "analysis_version": ANALYSIS_VERSION,
+        "owner_user_id": result.get("owner_user_id", "guest"),
         "run_dir": format_path(result["run_dir"]),
         "video": format_path(Path(video_path)),
         "score": result["analysis"]["score"],
@@ -115,6 +116,7 @@ def analyze_video(
     run_dir: str | Path | None = None,
     copy_input: bool = True,
     camera_view: str = "side",
+    owner_user_id: str = "guest",
 ) -> dict:
     run_paths = create_analysis_run(video_path, run_dir)
     source_video_path = Path(video_path)
@@ -166,6 +168,7 @@ def analyze_video(
 
     result = {
         "run_id": run_paths["run_dir"].name,
+        "owner_user_id": owner_user_id,
         "run_dir": run_paths["run_dir"],
         "input_video_path": input_video_path,
         "keypoints_path": keypoints_path,

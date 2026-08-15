@@ -409,6 +409,46 @@ h1 {
   text-wrap: balance;
 }
 
+.auth-panel {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 620px;
+  margin-top: 22px;
+  padding: 14px;
+  border: 1px solid rgba(245, 239, 228, 0.24);
+  border-left: 4px solid var(--lime);
+  border-radius: 8px;
+  background: rgba(12, 14, 18, 0.7);
+  color: white;
+}
+
+.auth-panel div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.auth-panel strong {
+  overflow: hidden;
+  color: white;
+  font-size: 14px;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auth-panel span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.auth-panel .secondary-button {
+  flex: 0 0 auto;
+}
+
 h2 {
   color: inherit;
   font-size: 18px;
@@ -984,6 +1024,11 @@ h2 {
 
   h1 {
     font-size: clamp(34px, 12vw, 52px);
+  }
+
+  .auth-panel {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .section-header {

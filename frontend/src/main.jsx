@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { isSupabaseConfigured, supabase } from "./supabaseClient";
 import "./styles.css";
 
 const API_BASE_URL =
@@ -90,6 +91,10 @@ function resolveOutputUrl(path) {
   return `${API_BASE_URL}${path}`;
 }
 
+function getUserName(session) {
+  return session?.user?.user_metadata?.full_name || session?.user?.email || "Signed-in player";
+}
+
 function App() {
   const [file, setFile] = useState(null);
   const [cameraView, setCameraView] = useState("side");
@@ -103,12 +108,16 @@ function App() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isComparing, setIsComparing] = useState(false);
   const [isComparingBest, setIsComparingBest] = useState(false);
+  const [session, setSession] = useState(null);
+  const [isAuthReady, setIsAuthReady] = useState(!isSupabaseConfigured);
+  const [isSigningIn, setIsSigningIn] = useState(false);
   const annotatedVideoRef = useRef(null);
   const annotatedVideoSectionRef = useRef(null);
 
   const chartUrl = resolveOutputUrl(result?.output_urls?.angles_chart);
   const followThroughDebugChartUrl = resolveOutputUrl(result?.output_urls?.follow_through_debug_chart);
   const annotatedVideoUrl = resolveOutputUrl(result?.output_urls?.annotated_video);
+  const authHeaders = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
 
   const coreMetrics = useMemo(() => {
     if (!result) {
@@ -164,9 +173,16 @@ function App() {
   }
 
   async function loadAnalysisHistory() {
+    if (isSupabaseConfigured && !session) {
+      setAnalysisHistory([]);
+      return;
+    }
+
     setIsLoadingHistory(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/analyses?limit=10`);
+      const response = await fetch(`${API_BASE_URL}/analyses?limit=10`, {
+        headers: authHeaders,
+      });
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.detail || "Could not load recent analyses.");
@@ -183,7 +199,9 @@ function App() {
   async function openSavedAnalysis(runId) {
     setError("");
     try {
-      const response = await fetch(`${API_BASE_URL}/analyses/${runId}`);
+      const response = await fetch(`${API_BASE_URL}/analyses/${runId}`, {
+        headers: authHeaders,
+      });
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.detail || "Could not open saved analysis.");
@@ -218,7 +236,9 @@ function App() {
         run_a: selectedComparisonRuns[0],
         run_b: selectedComparisonRuns[1],
       });
-      const response = await fetch(`${API_BASE_URL}/analyses/compare?${params}`);
+      const response = await fetch(`${API_BASE_URL}/analyses/compare?${params}`, {
+        headers: authHeaders,
+      });
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.detail || "Could not compare analyses.");
@@ -241,7 +261,9 @@ function App() {
     setIsComparingBest(true);
     setError("");
     try {
-      const response = await fetch(`${API_BASE_URL}/analyses/${result.run_id}/compare-best`);
+      const response = await fetch(`${API_BASE_URL}/analyses/${result.run_id}/compare-best`, {
+        headers: authHeaders,
+      });
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.detail || "Could not compare to your best shot.");
@@ -265,6 +287,7 @@ function App() {
     try {
       const response = await fetch(`${API_BASE_URL}/analyses/${analysis.run_id}`, {
         method: "DELETE",
+        headers: authHeaders,
       });
       const data = await response.json();
       if (!response.ok) {
@@ -285,11 +308,70 @@ function App() {
   }
 
   useEffect(() => {
-    loadAnalysisHistory();
+    if (!supabase) {
+      return;
+    }
+
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setIsAuthReady(true);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setSelectedComparisonRuns([]);
+      setComparison(null);
+      setResult(null);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (isAuthReady) {
+      loadAnalysisHistory();
+    }
+  }, [isAuthReady, session?.access_token]);
+
+  async function signInWithGoogle() {
+    if (!supabase) {
+      setError("Supabase is not configured yet.");
+      return;
+    }
+
+    setIsSigningIn(true);
+    setError("");
+    const { error: signInError } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: window.location.origin,
+      },
+    });
+
+    if (signInError) {
+      setError(signInError.message);
+      setIsSigningIn(false);
+    }
+  }
+
+  async function signOut() {
+    if (!supabase) {
+      return;
+    }
+
+    setError("");
+    await supabase.auth.signOut();
+  }
 
   async function analyzeShot(event) {
     event.preventDefault();
+    if (isSupabaseConfigured && !session) {
+      setError("Sign in with Google before analyzing so the shot is saved to your account.");
+      return;
+    }
+
     if (!file) {
       setError("Choose a video before analyzing.");
       return;
@@ -315,6 +397,7 @@ function App() {
       const response = await fetch(`${API_BASE_URL}/analyze-shot?${params}`, {
         method: "POST",
         headers: {
+          ...authHeaders,
           "X-Camera-View": selectedCameraView,
         },
         body: formData,
@@ -369,6 +452,36 @@ function App() {
           <div>
             <p className="eyebrow">AI Basketball Shot Analyzer</p>
             <h1>Upload a shot and get a motion report.</h1>
+            <div className="auth-panel">
+              {isSupabaseConfigured ? (
+                session ? (
+                  <>
+                    <div>
+                      <strong>{getUserName(session)}</strong>
+                      <span>Your analyses and comparisons are scoped to this account.</span>
+                    </div>
+                    <button className="secondary-button" type="button" onClick={signOut}>
+                      Sign Out
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <strong>Personal shot history</strong>
+                      <span>Sign in to save analyses under your own account.</span>
+                    </div>
+                    <button className="secondary-button" type="button" onClick={signInWithGoogle} disabled={isSigningIn}>
+                      {isSigningIn ? "Opening Google..." : "Sign in with Google"}
+                    </button>
+                  </>
+                )
+              ) : (
+                <div>
+                  <strong>Guest mode</strong>
+                  <span>Add Supabase env vars to enable Google sign-in and per-user history.</span>
+                </div>
+              )}
+            </div>
           </div>
 
           <form onSubmit={analyzeShot} className="upload-form">
@@ -486,7 +599,9 @@ function App() {
               ))}
             </div>
           ) : (
-            <p className="empty-state">No saved analyses yet.</p>
+            <p className="empty-state">
+              {isSupabaseConfigured && !session ? "Sign in to view your saved analyses." : "No saved analyses yet."}
+            </p>
           )}
         </section>
 
