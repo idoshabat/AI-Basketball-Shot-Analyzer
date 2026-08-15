@@ -2,6 +2,10 @@
   "score": 85,
   "shooting_side": "right",
   "camera_view": "side",
+  "reliability": {
+    "score": 90,
+    "label": "high"
+  },
   "headline": "A strong release with repeatability opportunities.",
   "metrics": {
     "release_confidence": 0.86,

@@ -1192,6 +1192,93 @@ def calculate_release_confidence(
     return confidence, label_confidence(confidence)
 
 
+def build_reliability_check(name: str, status: str, detail: str) -> dict:
+    return {
+        "name": name,
+        "status": status,
+        "detail": detail,
+    }
+
+
+def calculate_analysis_reliability(df: pd.DataFrame, camera_view: str, metrics: dict) -> dict:
+    score = 100
+    checks = []
+
+    release_confidence = metrics.get("release_confidence", 0.0)
+    if release_confidence >= 0.75:
+        checks.append(build_reliability_check("Release detection", "pass", "Release timing confidence is high."))
+    elif release_confidence >= 0.5:
+        score -= 15
+        checks.append(build_reliability_check("Release detection", "warning", "Release timing confidence is medium."))
+    else:
+        score -= 30
+        checks.append(build_reliability_check("Release detection", "fail", "Release timing confidence is low."))
+
+    if len(df) >= 60:
+        checks.append(build_reliability_check("Video length", "pass", f"{len(df)} usable pose frames were analyzed."))
+    elif len(df) >= 35:
+        score -= 10
+        checks.append(build_reliability_check("Video length", "warning", f"Only {len(df)} usable pose frames were analyzed."))
+    else:
+        score -= 25
+        checks.append(build_reliability_check("Video length", "fail", f"Only {len(df)} usable pose frames were analyzed."))
+
+    follow_window = metrics.get("follow_through_window", 0)
+    if follow_window >= 20:
+        checks.append(build_reliability_check("Post-release frames", "pass", "Enough frames exist after release."))
+    elif follow_window >= 8:
+        score -= 10
+        checks.append(build_reliability_check("Post-release frames", "warning", "Post-release window is short."))
+    else:
+        score -= 20
+        checks.append(build_reliability_check("Post-release frames", "fail", "Too few frames after release for strong follow-through judgment."))
+
+    full_body_columns = [
+        "left_shoulder_y",
+        "right_shoulder_y",
+        "left_hip_y",
+        "right_hip_y",
+        "left_ankle_y",
+        "right_ankle_y",
+    ]
+    full_body_available = all(column in df.columns for column in full_body_columns)
+    if full_body_available:
+        checks.append(build_reliability_check("Full-body landmarks", "pass", "Upper body, hips, and ankles are available."))
+    else:
+        score -= 25
+        checks.append(build_reliability_check("Full-body landmarks", "fail", "Some required full-body landmarks are missing."))
+
+    if camera_view in {"front", "back"}:
+        if metrics.get("alignment_status") == "measured":
+            checks.append(build_reliability_check("Front/back line metrics", "pass", "Feet, shin, forearm, and follow-through line metrics were measured."))
+        else:
+            score -= 35
+            checks.append(build_reliability_check("Front/back line metrics", "fail", "Front/back line metrics were not available. Re-analyze with the updated backend."))
+
+        foot_metrics_available = metrics.get("foot_parallel_error") is not None
+        if foot_metrics_available:
+            checks.append(build_reliability_check("Foot landmarks", "pass", "Heel and toe landmarks were detected for foot direction."))
+        else:
+            score -= 15
+            checks.append(build_reliability_check("Foot landmarks", "warning", "Heel/toe landmarks were not clear enough for foot direction."))
+    else:
+        checks.append(build_reliability_check("Camera-specific metrics", "pass", "Side-view biomechanics were used for this analysis."))
+
+    score = max(0, min(100, round(score)))
+    if score >= 80:
+        label = "high"
+    elif score >= 55:
+        label = "medium"
+    else:
+        label = "low"
+
+    return {
+        "score": score,
+        "label": label,
+        "checks": checks,
+    }
+
+
 def analyze_shot(features_csv_path: str, camera_view: str = "side") -> dict:
     camera_view = normalize_camera_view(camera_view)
     path = resolve_features_path(features_csv_path)
@@ -1289,11 +1376,13 @@ def analyze_shot(features_csv_path: str, camera_view: str = "side") -> dict:
         **jump,
         **alignment,
     }
+    reliability = calculate_analysis_reliability(df, camera_view, metrics)
 
     return {
         "score": score,
         "shooting_side": shooting_side,
         "camera_view": camera_view,
+        "reliability": reliability,
         "metrics": metrics,
         "phases": phases,
         "feedback": feedback,

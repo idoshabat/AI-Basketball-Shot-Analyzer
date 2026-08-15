@@ -80,6 +80,7 @@ def save_report(video_path: str, result: dict, report_path: str | Path | None = 
         "score": result["analysis"]["score"],
         "shooting_side": result["analysis"]["shooting_side"],
         "camera_view": result["analysis"]["camera_view"],
+        "reliability": result["analysis"]["reliability"],
         "video_metadata": result["video_metadata"],
         "metrics": result["analysis"]["metrics"],
         "phases": result["analysis"]["phases"],

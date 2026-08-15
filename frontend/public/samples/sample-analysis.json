@@ -3,6 +3,37 @@
   "score": 85,
   "shooting_side": "right",
   "camera_view": "side",
+  "reliability": {
+    "score": 90,
+    "label": "high",
+    "checks": [
+      {
+        "name": "Release detection",
+        "status": "pass",
+        "detail": "Release timing confidence is high."
+      },
+      {
+        "name": "Video length",
+        "status": "pass",
+        "detail": "240 usable pose frames were analyzed."
+      },
+      {
+        "name": "Post-release frames",
+        "status": "pass",
+        "detail": "Enough frames exist after release."
+      },
+      {
+        "name": "Full-body landmarks",
+        "status": "pass",
+        "detail": "Upper body, hips, and ankles are available."
+      },
+      {
+        "name": "Camera-specific metrics",
+        "status": "pass",
+        "detail": "Side-view biomechanics were used for this analysis."
+      }
+    ]
+  },
   "video_metadata": {
     "fps": 24,
     "frame_count": 240,

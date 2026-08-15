@@ -6,6 +6,21 @@ const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
   (import.meta.env.PROD ? "https://ai-basketball-shot-analyzer.onrender.com" : "http://127.0.0.1:8000");
 
+const CAMERA_VIEW_GUIDANCE = {
+  side: {
+    title: "Side view",
+    description: "Best for release timing, elbow extension, knee bend, leg drive, jump lift, and follow-through hold.",
+  },
+  front: {
+    title: "Front view",
+    description: "Best for feet parallelism, knee-to-foot lines, forearm verticality, follow-through direction, and body lean.",
+  },
+  back: {
+    title: "Back view",
+    description: "Best for shoulder/hip alignment, arm path, follow-through direction, stance symmetry, and body lean.",
+  },
+};
+
 function formatMetric(value, digits = 2) {
   if (value === null || value === undefined) {
     return "N/A";
@@ -375,6 +390,12 @@ function App() {
               </select>
             </label>
 
+            <div className="camera-guidance">
+              <strong>{CAMERA_VIEW_GUIDANCE[cameraView].title}</strong>
+              <p>{CAMERA_VIEW_GUIDANCE[cameraView].description}</p>
+              <span>Compare shots only when they were filmed from the same camera angle.</span>
+            </div>
+
             <label className="toggle-row">
               <input
                 type="checkbox"
@@ -551,6 +572,29 @@ function App() {
                 ))}
               </ul>
             </section>
+
+            {result.reliability && (
+              <section className="reliability-panel wide">
+                <div className="section-header">
+                  <div>
+                    <h2>Analysis Reliability</h2>
+                    <p className="subtle">Camera view: {titleCase(result.camera_view || "side")}</p>
+                  </div>
+                  <div className={`reliability-score ${result.reliability.label}`}>
+                    <strong>{result.reliability.score}</strong>
+                    <span>{result.reliability.label}</span>
+                  </div>
+                </div>
+                <div className="reliability-list">
+                  {result.reliability.checks.map((check) => (
+                    <div className={`reliability-check ${check.status}`} key={check.name}>
+                      <strong>{check.name}</strong>
+                      <span>{check.detail}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <section className="improvement-panel wide">
               <h2>What do I need to improve?</h2>
