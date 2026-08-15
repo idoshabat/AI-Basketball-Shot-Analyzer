@@ -175,6 +175,19 @@ def load_report(run_id: str) -> dict:
         return json.load(report_file)
 
 
+def load_saved_reports() -> list[dict]:
+    analyses_dir = STORAGE_DIR / "analyses"
+    if not analyses_dir.exists():
+        return []
+
+    reports = []
+    for report_path in analyses_dir.glob("*/report.json"):
+        with report_path.open() as report_file:
+            reports.append(json.load(report_file))
+
+    return reports
+
+
 def build_saved_analysis_response(report: dict) -> dict:
     files = report.get("files", {})
     if report.get("run_id") and "json_report" not in files:
@@ -282,7 +295,7 @@ def compare_reports(first_report: dict, second_report: dict) -> dict:
         {
             "first": first,
             "second": second,
-            "score_delta": second.get("score") - first.get("score"),
+            "score_delta": (second.get("score") or 0) - (first.get("score") or 0),
             "metrics": metric_rows,
             "coaching_items": {
                 "first": first.get("coaching_items", []),
@@ -314,20 +327,11 @@ def health_check() -> dict:
 
 @app.get("/analyses")
 def list_analyses(limit: int = 20) -> list[dict]:
-    analyses_dir = STORAGE_DIR / "analyses"
-    if not analyses_dir.exists():
-        return []
-
-    reports = sorted(
-        analyses_dir.glob("*/report.json"),
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
-    )
+    reports = sorted(load_saved_reports(), key=lambda report: report.get("run_id", ""), reverse=True)
     summaries = []
 
-    for report_path in reports[: max(1, min(limit, 100))]:
-        with report_path.open() as report_file:
-            summaries.append(summarize_report(json.load(report_file)))
+    for report in reports[: max(1, min(limit, 100))]:
+        summaries.append(summarize_report(report))
 
     return summaries
 
@@ -338,6 +342,23 @@ def compare_analyses(run_a: str, run_b: str) -> dict:
         raise HTTPException(status_code=400, detail="Choose two different analysis runs.")
 
     return compare_reports(load_report(run_a), load_report(run_b))
+
+
+@app.get("/analyses/{run_id}/compare-best")
+def compare_analysis_to_best(run_id: str) -> dict:
+    current_report = load_report(run_id)
+    candidates = [report for report in load_saved_reports() if report.get("run_id") != run_id]
+
+    if not candidates:
+        raise HTTPException(status_code=404, detail="No other saved analyses are available for comparison.")
+
+    best_report = max(candidates, key=lambda report: report.get("score") or 0)
+    comparison = compare_reports(best_report, current_report)
+    comparison["mode"] = "best_baseline"
+    comparison["baseline_label"] = "Best Saved Shot"
+    comparison["current_label"] = "Current Shot"
+
+    return comparison
 
 
 @app.get("/analyses/{run_id}")

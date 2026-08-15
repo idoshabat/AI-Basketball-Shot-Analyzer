@@ -1,0 +1,18 @@
+{
+  "score": 85,
+  "shooting_side": "right",
+  "headline": "A strong release with repeatability opportunities.",
+  "metrics": {
+    "release_confidence": 0.86,
+    "release_elbow_angle": 168.69,
+    "follow_through_ratio": 0.55,
+    "ankle_lift": 0.029,
+    "min_knee_angle": 134.22,
+    "elbow_angle_std": 34.93
+  },
+  "top_priorities": [
+    "Increase jump lift",
+    "Get slightly deeper in the load",
+    "Tighten arm motion consistency"
+  ]
+}

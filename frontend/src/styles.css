@@ -199,6 +199,19 @@ button:disabled {
   background: #398381;
 }
 
+.sample-button {
+  min-height: 42px;
+  background: var(--ink);
+  color: var(--lime);
+  border-color: rgba(201, 255, 87, 0.26);
+  box-shadow: none;
+}
+
+.sample-button:hover:not(:disabled) {
+  background: #20262d;
+  box-shadow: 0 10px 24px rgba(18, 21, 26, 0.18);
+}
+
 .danger-button {
   min-height: 38px;
   padding: 0 14px;
@@ -594,6 +607,21 @@ h2 {
   font-weight: 950;
   line-height: 0.94;
   text-shadow: 0 0 26px rgba(240, 100, 47, 0.28);
+}
+
+.best-shot-button {
+  width: 100%;
+  min-height: 42px;
+  margin-top: 18px;
+  background: rgba(201, 255, 87, 0.14);
+  color: var(--lime);
+  border-color: rgba(201, 255, 87, 0.34);
+  box-shadow: none;
+}
+
+.best-shot-button:hover:not(:disabled) {
+  background: rgba(201, 255, 87, 0.22);
+  box-shadow: 0 12px 28px rgba(201, 255, 87, 0.14);
 }
 
 .score-panel .subtle,

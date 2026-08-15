@@ -74,6 +74,7 @@ function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isComparing, setIsComparing] = useState(false);
+  const [isComparingBest, setIsComparingBest] = useState(false);
   const annotatedVideoRef = useRef(null);
   const annotatedVideoSectionRef = useRef(null);
 
@@ -195,6 +196,29 @@ function App() {
     }
   }
 
+  async function compareToBestShot() {
+    if (!result?.run_id) {
+      setError("Analyze or open a saved shot before comparing to your best shot.");
+      return;
+    }
+
+    setIsComparingBest(true);
+    setError("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/analyses/${result.run_id}/compare-best`);
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Could not compare to your best shot.");
+      }
+
+      setComparison(data);
+    } catch (bestComparisonError) {
+      setError(bestComparisonError.message);
+    } finally {
+      setIsComparingBest(false);
+    }
+  }
+
   async function deleteSavedAnalysis(analysis) {
     const shouldDelete = window.confirm(`Delete analysis "${analysis.run_id}"? This cannot be undone.`);
     if (!shouldDelete) {
@@ -268,6 +292,22 @@ function App() {
     }
   }
 
+  async function loadSampleResult() {
+    setError("");
+    setComparison(null);
+    try {
+      const response = await fetch("/samples/sample-analysis.json");
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error("Could not load sample analysis.");
+      }
+
+      setResult(data);
+    } catch (sampleError) {
+      setError(sampleError.message);
+    }
+  }
+
   return (
     <main className="app-shell">
       <section className="workspace">
@@ -299,6 +339,9 @@ function App() {
             <button type="submit" disabled={isAnalyzing}>
               {isAnalyzing && <span className="button-spinner" aria-hidden="true" />}
               <span>{isAnalyzing ? "Analyzing shot..." : "Analyze Shot"}</span>
+            </button>
+            <button className="sample-button" type="button" onClick={loadSampleResult}>
+              Load Sample Result
             </button>
             <p className="processing-note">
               Analysis can take a few minutes on the hosted backend, especially when annotated video is enabled.
@@ -382,7 +425,7 @@ function App() {
           <section className="comparison-panel">
             <div className="section-header">
               <div>
-                <h2>Shot Comparison</h2>
+                <h2>{comparison.mode === "best_baseline" ? "Compared to Best Shot" : "Shot Comparison"}</h2>
                 <p className="subtle">
                   {comparison.first.run_id} vs {comparison.second.run_id}
                 </p>
@@ -394,11 +437,11 @@ function App() {
 
             <div className="comparison-summary">
               <div>
-                <span>First Shot</span>
+                <span>{comparison.baseline_label || "First Shot"}</span>
                 <strong>{comparison.first.score}</strong>
               </div>
               <div>
-                <span>Second Shot</span>
+                <span>{comparison.current_label || "Second Shot"}</span>
                 <strong>{comparison.second.score}</strong>
               </div>
             </div>
@@ -440,6 +483,14 @@ function App() {
                 <p className="eyebrow">Shot Score</p>
                 <div className="score">{result.score}</div>
                 <p className="subtle">Shooting side: {result.shooting_side}</p>
+                <button
+                  className="best-shot-button"
+                  type="button"
+                  onClick={compareToBestShot}
+                  disabled={isComparingBest}
+                >
+                  {isComparingBest ? "Comparing..." : "Compare to Best"}
+                </button>
               </div>
             </section>
 
