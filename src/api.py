@@ -11,7 +11,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 import numpy as np
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -220,6 +220,7 @@ def build_file_response(result: dict) -> dict:
         "annotated_video": format_path(result["annotated_video_path"]),
         "json_report": format_path(result["report_path"]),
     }
+    files.update({name: format_path(path) for name, path in result.get("coaching_frame_paths", {}).items()})
 
     output_urls = {}
     for name, path in files.items():
@@ -312,7 +313,14 @@ def load_report_for_user(run_id: str, user_id: str) -> dict:
     if supabase_store.is_configured():
         report = supabase_store.load_report(run_id, user_id)
         if not report:
-            raise HTTPException(status_code=404, detail="Analysis run not found.")
+            try:
+                local_report = load_local_report(run_id)
+            except HTTPException:
+                raise HTTPException(status_code=404, detail="Analysis run not found.")
+            if not report_belongs_to_user(local_report, user_id):
+                raise HTTPException(status_code=404, detail="Analysis run not found.")
+
+            return local_report
 
         return hydrate_supabase_report(report)
 
@@ -321,6 +329,15 @@ def load_report_for_user(run_id: str, user_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Analysis run not found.")
 
     return report
+
+
+def persist_report_in_background(report_path: str | Path) -> None:
+    try:
+        with Path(report_path).open() as report_file:
+            report = json.load(report_file)
+        supabase_store.persist_report(report)
+    except Exception as exc:
+        print(f"Supabase persistence failed for {report_path}: {exc}")
 
 
 def build_saved_analysis_response(report: dict) -> dict:
@@ -475,6 +492,9 @@ def health_check() -> dict:
 @app.get("/analyses")
 def list_analyses(limit: int = 20, authorization: str | None = Header(default=None)) -> list[dict]:
     user_id = get_request_user_id(authorization)
+    if supabase_store.is_configured():
+        return make_json_safe(supabase_store.list_report_summaries(user_id, limit))
+
     reports = load_reports_for_user(user_id, limit)
     summaries = []
 
@@ -548,6 +568,7 @@ def delete_analysis(run_id: str, authorization: str | None = Header(default=None
 
 @app.post("/analyze-shot")
 async def analyze_shot_endpoint(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     save_chart: bool = True,
     save_annotated_video: bool = True,
@@ -604,14 +625,7 @@ async def analyze_shot_endpoint(
     response.update(build_file_response(result))
 
     if save_report and supabase_store.is_configured():
-        try:
-            with Path(result["report_path"]).open() as report_file:
-                report = json.load(report_file)
-            persisted_report = supabase_store.persist_report(report)
-            response["persistence"] = "supabase"
-            response["files"] = persisted_report.get("files", response["files"])
-            response["output_urls"] = build_output_urls(persisted_report, response["files"])
-        except supabase_store.SupabaseStoreError as exc:
-            response["persistence_warning"] = str(exc)
+        background_tasks.add_task(persist_report_in_background, result["report_path"])
+        response["persistence"] = "supabase_pending"
 
     return make_json_safe(response)

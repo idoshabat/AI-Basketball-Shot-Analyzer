@@ -90,6 +90,14 @@ function resolveOutputUrl(path) {
     return path;
   }
 
+  if (path.startsWith("/storage/v1/") && import.meta.env.VITE_SUPABASE_URL) {
+    return `${import.meta.env.VITE_SUPABASE_URL.replace(/\/$/, "")}${path}`;
+  }
+
+  if (path.startsWith("/object/sign/") && import.meta.env.VITE_SUPABASE_URL) {
+    return `${import.meta.env.VITE_SUPABASE_URL.replace(/\/$/, "")}/storage/v1${path}`;
+  }
+
   return `${API_BASE_URL}${path}`;
 }
 
@@ -134,8 +142,10 @@ function App() {
   const [isGuestMode, setIsGuestMode] = useState(() => {
     return window.localStorage.getItem(ACCESS_MODE_STORAGE_KEY) === "guest";
   });
+  const [selectedEvidenceItem, setSelectedEvidenceItem] = useState(null);
   const annotatedVideoRef = useRef(null);
   const annotatedVideoSectionRef = useRef(null);
+  const resultsSectionRef = useRef(null);
 
   const chartUrl = resolveOutputUrl(result?.output_urls?.angles_chart);
   const followThroughDebugChartUrl = resolveOutputUrl(result?.output_urls?.follow_through_debug_chart);
@@ -195,6 +205,22 @@ function App() {
     video.play().catch(() => {});
   }
 
+  function getEvidenceFrameUrl(item) {
+    if (!item) {
+      return null;
+    }
+
+    if (item.evidence_frame_url) {
+      return resolveOutputUrl(item.evidence_frame_url);
+    }
+
+    if (item.evidence_frame_file && result?.output_urls?.[item.evidence_frame_file]) {
+      return resolveOutputUrl(result.output_urls[item.evidence_frame_file]);
+    }
+
+    return resolveOutputUrl(item.evidence_frame_path);
+  }
+
   async function loadAnalysisHistory() {
     if (!hasEnteredApp) {
       setAnalysisHistory([]);
@@ -231,6 +257,10 @@ function App() {
       }
 
       setResult(data);
+      setSelectedEvidenceItem(null);
+      window.setTimeout(() => {
+        resultsSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 50);
     } catch (savedAnalysisError) {
       setError(getRequestErrorMessage(savedAnalysisError));
     }
@@ -319,6 +349,7 @@ function App() {
 
       if (result?.run_id === analysis.run_id) {
         setResult(null);
+        setSelectedEvidenceItem(null);
       }
       setSelectedComparisonRuns((currentRuns) => currentRuns.filter((runId) => runId !== analysis.run_id));
       if (comparison?.first?.run_id === analysis.run_id || comparison?.second?.run_id === analysis.run_id) {
@@ -357,6 +388,7 @@ function App() {
       setSelectedComparisonRuns([]);
       setComparison(null);
       setResult(null);
+      setSelectedEvidenceItem(null);
     });
 
     return () => subscription.unsubscribe();
@@ -437,6 +469,7 @@ function App() {
     setIsAnalyzing(true);
     setError("");
     setResult(null);
+    setSelectedEvidenceItem(null);
 
     const formData = new FormData();
     formData.append("file", file);
@@ -477,7 +510,23 @@ function App() {
       }
 
       setResult(data);
-      loadAnalysisHistory();
+      setSelectedEvidenceItem(null);
+      setAnalysisHistory((currentHistory) => {
+        const optimisticSummary = {
+          run_id: data.run_id,
+          created_at: "Saving...",
+          score: data.score,
+          shooting_side: data.shooting_side,
+          camera_view: data.camera_view,
+          video: file.name,
+        };
+        return [optimisticSummary, ...currentHistory.filter((analysis) => analysis.run_id !== data.run_id)].slice(0, 10);
+      });
+      if (data.persistence === "supabase_pending") {
+        window.setTimeout(loadAnalysisHistory, 2500);
+      } else {
+        loadAnalysisHistory();
+      }
     } catch (requestError) {
       setError(getRequestErrorMessage(requestError));
     } finally {
@@ -496,10 +545,13 @@ function App() {
       }
 
       setResult(data);
+      setSelectedEvidenceItem(null);
     } catch (sampleError) {
       setError(sampleError.message);
     }
   }
+
+  const selectedEvidenceFrameUrl = getEvidenceFrameUrl(selectedEvidenceItem);
 
   return (
     <main className="app-shell">
@@ -677,13 +729,36 @@ function App() {
                 {isComparing ? "Comparing..." : "Compare"}
               </button>
               <button className="secondary-button" type="button" onClick={loadAnalysisHistory} disabled={isLoadingHistory}>
-                {isLoadingHistory ? "Loading..." : "Refresh"}
+                {isLoadingHistory && <span className="button-spinner small" aria-hidden="true" />}
+                <span>{isLoadingHistory ? "Loading..." : "Refresh"}</span>
               </button>
             </div>
           </div>
 
-          {analysisHistory.length > 0 ? (
+          {isLoadingHistory && analysisHistory.length === 0 ? (
+            <div className="history-loading" aria-live="polite">
+              <div className="history-loading-header">
+                <span className="button-spinner" aria-hidden="true" />
+                <strong>Loading previous analyses</strong>
+              </div>
+              <div className="history-skeleton-list" aria-hidden="true">
+                {[1, 2, 3].map((item) => (
+                  <div className="history-skeleton" key={item}>
+                    <span />
+                    <div />
+                    <strong />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : analysisHistory.length > 0 ? (
             <div className="history-list">
+              {isLoadingHistory && (
+                <div className="history-refreshing" aria-live="polite">
+                  <span className="button-spinner small" aria-hidden="true" />
+                  Refreshing saved shots...
+                </div>
+              )}
               {analysisHistory.map((analysis) => (
                 <article className="history-item" key={analysis.run_id}>
                   <label className="compare-check">
@@ -776,7 +851,7 @@ function App() {
         )}
 
         {result && (
-          <div className="results-grid">
+          <div className="results-grid" ref={resultsSectionRef}>
             <section className="score-panel">
               <div>
                 <p className="eyebrow">Shot Score</p>
@@ -855,14 +930,24 @@ function App() {
                       <span>Drill</span>
                       <p>{item.drill}</p>
                     </div>
-                    <button
-                      className="watch-button"
-                      type="button"
-                      disabled={!annotatedVideoUrl}
-                      onClick={() => watchCoachingMoment(item)}
-                    >
-                      Watch this moment
-                    </button>
+                    <div className="improvement-actions">
+                      <button
+                        className="watch-button"
+                        type="button"
+                        disabled={!annotatedVideoUrl}
+                        onClick={() => watchCoachingMoment(item)}
+                      >
+                        Watch this moment
+                      </button>
+                      <button
+                        className="evidence-button"
+                        type="button"
+                        disabled={!getEvidenceFrameUrl(item)}
+                        onClick={() => setSelectedEvidenceItem(item)}
+                      >
+                        View frame
+                      </button>
+                    </div>
                   </article>
                 ))}
               </div>
@@ -926,6 +1011,44 @@ function App() {
           </div>
         )}
           </>
+        )}
+        {selectedEvidenceItem && selectedEvidenceFrameUrl && (
+          <div className="modal-backdrop" role="presentation" onClick={() => setSelectedEvidenceItem(null)}>
+            <section
+              className="evidence-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="evidence-modal-title"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="section-header">
+                <div>
+                  <p className="eyebrow">Evidence Frame</p>
+                  <h2 id="evidence-modal-title">{selectedEvidenceItem.title}</h2>
+                  <p className="subtle">
+                    {titleCase(selectedEvidenceItem.phase)} - {formatFrameRange(selectedEvidenceItem)}
+                  </p>
+                </div>
+                <button className="secondary-button" type="button" onClick={() => setSelectedEvidenceItem(null)}>
+                  Close
+                </button>
+              </div>
+              <img src={selectedEvidenceFrameUrl} alt={`Evidence frame for ${selectedEvidenceItem.title}`} />
+              <div className="evidence-details">
+                <div>
+                  <span>Metric</span>
+                  <strong>
+                    {titleCase(selectedEvidenceItem.metric)}: {formatCoachingValue(selectedEvidenceItem.value)}
+                  </strong>
+                </div>
+                <div>
+                  <span>Target</span>
+                  <strong>{selectedEvidenceItem.target}</strong>
+                </div>
+              </div>
+              <p>{selectedEvidenceItem.why_it_matters}</p>
+            </section>
+          </div>
         )}
       </section>
     </main>

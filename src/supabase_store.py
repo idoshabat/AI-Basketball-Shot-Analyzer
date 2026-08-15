@@ -12,6 +12,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_TABLE = "analyses"
 DEFAULT_BUCKET = "shot-analyses"
 SIGNED_URL_EXPIRES_SECONDS = 60 * 60 * 24
+DEFAULT_PERSISTED_FILE_KEYS = {
+    "angles_chart",
+    "follow_through_debug_chart",
+    "annotated_video",
+}
 
 
 class SupabaseStoreError(RuntimeError):
@@ -28,6 +33,30 @@ def get_table_name() -> str:
 
 def get_bucket_name() -> str:
     return os.getenv("SUPABASE_STORAGE_BUCKET", DEFAULT_BUCKET)
+
+
+def env_flag(name: str, default: bool = False) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def should_upload_file(name: str) -> bool:
+    if name.startswith("coaching_frame_"):
+        return True
+
+    if name == "original_video":
+        return env_flag("SUPABASE_UPLOAD_ORIGINAL_VIDEO", False)
+
+    if name in {"keypoints_csv", "features_csv", "pose_video", "json_report"}:
+        return env_flag("SUPABASE_UPLOAD_DEBUG_FILES", False)
+
+    if name == "annotated_video":
+        return env_flag("SUPABASE_UPLOAD_ANNOTATED_VIDEO", True)
+
+    return name in DEFAULT_PERSISTED_FILE_KEYS
 
 
 def request_json(method: str, path: str, payload=None, extra_headers: dict | None = None):
@@ -109,7 +138,44 @@ def signed_url(object_path: str) -> str:
     if url.startswith("http://") or url.startswith("https://"):
         return url
 
-    return f"{os.getenv('SUPABASE_URL').rstrip('/')}{url}"
+    supabase_url = os.getenv("SUPABASE_URL").rstrip("/")
+    if url.startswith("/storage/v1/"):
+        return f"{supabase_url}{url}"
+
+    return f"{supabase_url}/storage/v1{url}"
+
+
+def normalize_signed_url(url: str) -> str:
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+
+    supabase_url = os.getenv("SUPABASE_URL").rstrip("/")
+    if url.startswith("/storage/v1/"):
+        return f"{supabase_url}{url}"
+
+    return f"{supabase_url}/storage/v1{url}"
+
+
+def signed_urls(object_paths: list[str]) -> dict[str, str]:
+    if not object_paths:
+        return {}
+
+    data = request_json(
+        "POST",
+        f"/storage/v1/object/sign/{get_bucket_name()}",
+        {"expiresIn": SIGNED_URL_EXPIRES_SECONDS, "paths": object_paths},
+    )
+    if not isinstance(data, list):
+        raise SupabaseStoreError("Supabase did not return signed storage URLs.")
+
+    urls = {}
+    for item in data:
+        if item.get("error") or not item.get("path") or not item.get("signedURL"):
+            continue
+
+        urls[item["path"]] = normalize_signed_url(item["signedURL"])
+
+    return urls
 
 
 def local_file_path(relative_path: str | None) -> Path | None:
@@ -126,6 +192,9 @@ def build_storage_files(report: dict) -> dict:
     storage_files = {}
 
     for name, relative_path in report.get("files", {}).items():
+        if not should_upload_file(name):
+            continue
+
         local_path = local_file_path(relative_path)
         if not local_path:
             continue
@@ -140,10 +209,12 @@ def build_storage_files(report: dict) -> dict:
 def add_signed_output_urls(report: dict) -> dict:
     hydrated_report = deepcopy(report)
     output_urls = {}
+    storage_files = hydrated_report.get("storage_files", {})
+    signed_url_by_path = signed_urls(list(storage_files.values()))
 
-    for name, object_path in hydrated_report.get("storage_files", {}).items():
-        if name in {"angles_chart", "follow_through_debug_chart", "annotated_video", "original_video", "json_report"}:
-            output_urls[name] = signed_url(object_path)
+    for name, object_path in storage_files.items():
+        if object_path in signed_url_by_path:
+            output_urls[name] = signed_url_by_path[object_path]
 
     hydrated_report["output_urls"] = output_urls
     return hydrated_report
@@ -185,6 +256,35 @@ def list_reports(owner_user_id: str, limit: int = 20) -> list[dict]:
     )
     rows = request_json("GET", path) or []
     return [row["report"] for row in rows if row.get("report")]
+
+
+def list_report_summaries(owner_user_id: str, limit: int = 20) -> list[dict]:
+    table = quote(get_table_name(), safe="")
+    owner_filter = quote(owner_user_id, safe="")
+    path = (
+        f"/rest/v1/{table}?select=run_id,score,shooting_side,camera_view,created_at,report"
+        f"&owner_user_id=eq.{owner_filter}"
+        f"&order=created_at.desc"
+        f"&limit={max(1, min(limit, 100))}"
+    )
+    rows = request_json("GET", path) or []
+    summaries = []
+
+    for row in rows:
+        report = row.get("report") or {}
+        files = report.get("files", {})
+        summaries.append(
+            {
+                "run_id": row.get("run_id") or report.get("run_id"),
+                "created_at": row.get("created_at") or "",
+                "score": row.get("score") or report.get("score"),
+                "shooting_side": row.get("shooting_side") or report.get("shooting_side"),
+                "camera_view": row.get("camera_view") or report.get("camera_view", "side"),
+                "video": Path(files.get("original_video", "original.mp4")).name,
+            }
+        )
+
+    return summaries
 
 
 def load_report(run_id: str, owner_user_id: str) -> dict | None:

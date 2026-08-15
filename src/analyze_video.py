@@ -1,10 +1,13 @@
 import argparse
+import csv
 from datetime import datetime
 import json
 from pathlib import Path
 import re
 import shutil
 from uuid import uuid4
+
+import cv2
 
 from feature_extractor import extract_features
 from shot_analyzer import analyze_shot, print_report
@@ -72,6 +75,18 @@ def format_path(path: Path | None) -> str | None:
 
 def save_report(video_path: str, result: dict, report_path: str | Path | None = None) -> Path:
     report_path = Path(report_path) if report_path else build_report_path(video_path)
+    files = {
+        "original_video": format_path(result["input_video_path"]),
+        "keypoints_csv": format_path(result["keypoints_path"]),
+        "features_csv": format_path(result["features_path"]),
+        "angles_chart": format_path(result["chart_path"]),
+        "follow_through_debug_chart": format_path(result["follow_through_debug_chart_path"]),
+        "pose_video": format_path(result["output_path"]),
+        "annotated_video": format_path(result["annotated_video_path"]),
+        "json_report": format_path(report_path),
+    }
+    files.update({name: format_path(path) for name, path in result.get("coaching_frame_paths", {}).items()})
+
     report = {
         "run_id": result["run_id"],
         "analysis_version": ANALYSIS_VERSION,
@@ -87,16 +102,7 @@ def save_report(video_path: str, result: dict, report_path: str | Path | None = 
         "phases": result["analysis"]["phases"],
         "feedback": result["analysis"]["feedback"],
         "coaching_items": result["analysis"]["coaching_items"],
-        "files": {
-            "original_video": format_path(result["input_video_path"]),
-            "keypoints_csv": format_path(result["keypoints_path"]),
-            "features_csv": format_path(result["features_path"]),
-            "angles_chart": format_path(result["chart_path"]),
-            "follow_through_debug_chart": format_path(result["follow_through_debug_chart_path"]),
-            "pose_video": format_path(result["output_path"]),
-            "annotated_video": format_path(result["annotated_video_path"]),
-            "json_report": format_path(report_path),
-        },
+        "files": files,
     }
 
     report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -104,6 +110,193 @@ def save_report(video_path: str, result: dict, report_path: str | Path | None = 
         json.dump(report, report_file, indent=2)
 
     return report_path
+
+
+def load_feature_rows(features_path: str | Path) -> dict[int, dict]:
+    rows = {}
+    with Path(features_path).open() as features_file:
+        reader = csv.DictReader(features_file)
+        for row in reader:
+            try:
+                rows[int(float(row["frame"]))] = row
+            except (KeyError, TypeError, ValueError):
+                continue
+
+    return rows
+
+
+def get_feature_row(feature_rows: dict[int, dict], frame_number: int) -> dict | None:
+    if not feature_rows:
+        return None
+
+    if frame_number in feature_rows:
+        return feature_rows[frame_number]
+
+    closest_frame = min(feature_rows, key=lambda candidate: abs(candidate - frame_number))
+    return feature_rows[closest_frame]
+
+
+def point_from_row(row: dict, name: str, width: int, height: int) -> tuple[int, int] | None:
+    try:
+        x = float(row[f"{name}_x"])
+        y = float(row[f"{name}_y"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+    if x <= 0 and y <= 0:
+        return None
+
+    return int(x * width), int(y * height)
+
+
+def draw_points_and_lines(frame, row: dict, point_names: list[str], color: tuple[int, int, int], label: str) -> None:
+    height, width = frame.shape[:2]
+    points = [point_from_row(row, name, width, height) for name in point_names]
+    points = [point for point in points if point]
+    if not points:
+        return
+
+    for first_point, second_point in zip(points, points[1:]):
+        cv2.line(frame, first_point, second_point, color, 5, cv2.LINE_AA)
+
+    for point in points:
+        cv2.circle(frame, point, 10, (12, 14, 18), thickness=-1, lineType=cv2.LINE_AA)
+        cv2.circle(frame, point, 7, color, thickness=-1, lineType=cv2.LINE_AA)
+
+    label_x = min(point[0] for point in points)
+    label_y = max(76, min(point[1] for point in points) - 18)
+    cv2.putText(frame, label, (label_x, label_y), cv2.FONT_HERSHEY_SIMPLEX, 0.64, color, 2, cv2.LINE_AA)
+
+
+def draw_horizontal_reference(frame, row: dict, point_names: list[str], color: tuple[int, int, int], label: str) -> None:
+    height, width = frame.shape[:2]
+    points = [point_from_row(row, name, width, height) for name in point_names]
+    points = [point for point in points if point]
+    if not points:
+        return
+
+    y = int(sum(point[1] for point in points) / len(points))
+    x1 = max(0, min(point[0] for point in points) - 42)
+    x2 = min(width - 1, max(point[0] for point in points) + 42)
+    cv2.line(frame, (x1, y), (x2, y), color, 3, cv2.LINE_AA)
+    cv2.putText(frame, label, (x1, max(76, y - 12)), cv2.FONT_HERSHEY_SIMPLEX, 0.58, color, 2, cv2.LINE_AA)
+
+
+def draw_vertical_reference(frame, point: tuple[int, int], color: tuple[int, int, int], label: str) -> None:
+    height, _ = frame.shape[:2]
+    x, y = point
+    cv2.line(frame, (x, max(58, y - 80)), (x, min(height - 1, y + 80)), color, 2, cv2.LINE_AA)
+    cv2.putText(frame, label, (x + 10, max(76, y - 62)), cv2.FONT_HERSHEY_SIMPLEX, 0.56, color, 2, cv2.LINE_AA)
+
+
+def draw_evidence_overlay(frame, row: dict | None, item: dict, shooting_side: str) -> None:
+    if row is None:
+        return
+
+    metric = item.get("metric", "")
+    side = "left" if shooting_side == "left" else "right"
+    other_side = "right" if side == "left" else "left"
+    highlight = (87, 255, 201)
+    warning = (47, 100, 240)
+    neutral = (255, 255, 255)
+    height, width = frame.shape[:2]
+
+    if metric in {"release_elbow_angle", "elbow_angle_std", "follow_through_frames", "follow_through_ratio"}:
+        draw_points_and_lines(frame, row, [f"{side}_shoulder", f"{side}_elbow", f"{side}_wrist"], highlight, "Shooting arm")
+        wrist = point_from_row(row, f"{side}_wrist", width, height)
+        if wrist:
+            draw_vertical_reference(frame, wrist, warning, "finish line")
+        return
+
+    if metric in {"min_knee_angle", "hip_rise", "ankle_lift"}:
+        draw_points_and_lines(frame, row, [f"{side}_hip", f"{side}_knee", f"{side}_ankle"], highlight, "Leg drive")
+        draw_points_and_lines(frame, row, [f"{other_side}_hip", f"{other_side}_knee", f"{other_side}_ankle"], neutral, "Balance leg")
+        draw_horizontal_reference(frame, row, [f"{side}_ankle", f"{other_side}_ankle"], warning, "ankle line")
+        return
+
+    if metric in {"left_shin_vertical_error", "right_shin_vertical_error", "shin_parallel_error"}:
+        draw_points_and_lines(frame, row, ["left_knee", "left_ankle"], highlight, "left shin")
+        draw_points_and_lines(frame, row, ["right_knee", "right_ankle"], warning, "right shin")
+        return
+
+    if metric in {"foot_parallel_error", "left_foot_angle_to_floor", "right_foot_angle_to_floor"}:
+        draw_points_and_lines(frame, row, ["left_heel", "left_foot_index"], highlight, "left foot")
+        draw_points_and_lines(frame, row, ["right_heel", "right_foot_index"], warning, "right foot")
+        draw_horizontal_reference(frame, row, ["left_foot_index", "right_foot_index"], neutral, "floor reference")
+        return
+
+    if metric in {"forearm_vertical_error", "follow_through_vertical_error"}:
+        draw_points_and_lines(frame, row, [f"{side}_elbow", f"{side}_wrist"], highlight, "Forearm line")
+        wrist = point_from_row(row, f"{side}_wrist", width, height)
+        if wrist:
+            draw_vertical_reference(frame, wrist, warning, "vertical target")
+        return
+
+    if metric == "body_lean":
+        draw_points_and_lines(frame, row, ["left_shoulder", "right_shoulder"], highlight, "Shoulder line")
+        draw_points_and_lines(frame, row, ["left_hip", "right_hip"], warning, "Hip line")
+        return
+
+    draw_points_and_lines(frame, row, [f"{side}_shoulder", f"{side}_elbow", f"{side}_wrist"], highlight, "Focus area")
+
+
+def save_coaching_frame_images(
+    video_path: str | Path,
+    features_path: str | Path,
+    coaching_items: list[dict],
+    output_dir: str | Path,
+    shooting_side: str = "right",
+) -> dict:
+    frame_paths = {}
+    feature_rows = load_feature_rows(features_path)
+    video_capture = cv2.VideoCapture(str(video_path))
+    if not video_capture.isOpened():
+        return frame_paths
+
+    try:
+        total_frames = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        for index, item in enumerate(coaching_items, start=1):
+            start_frame = item.get("start_frame")
+            if start_frame is None:
+                continue
+
+            frame_number = max(1, int(start_frame))
+            if total_frames:
+                frame_number = min(frame_number, total_frames)
+
+            video_capture.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
+            ok, frame = video_capture.read()
+            if not ok or frame is None:
+                continue
+
+            title = item.get("title", "Improvement frame")
+            frame_key = f"coaching_frame_{index:02d}"
+            image_path = Path(output_dir) / f"{frame_key}.jpg"
+            label = f"Priority {index}: {title} | Frame {frame_number}"
+            feature_row = get_feature_row(feature_rows, frame_number)
+
+            cv2.rectangle(frame, (0, 0), (frame.shape[1], 54), (12, 14, 18), thickness=-1)
+            cv2.putText(
+                frame,
+                label[:110],
+                (18, 34),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.78,
+                (255, 255, 255),
+                2,
+                cv2.LINE_AA,
+            )
+            draw_evidence_overlay(frame, feature_row, item, shooting_side)
+            cv2.imwrite(str(image_path), frame)
+
+            item["evidence_frame_file"] = frame_key
+            item["evidence_frame_path"] = format_path(image_path)
+            item["evidence_frame_number"] = frame_number
+            frame_paths[frame_key] = image_path
+    finally:
+        video_capture.release()
+
+    return frame_paths
 
 
 def analyze_video(
@@ -165,6 +358,13 @@ def analyze_video(
         if save_annotated_video
         else None
     )
+    coaching_frame_paths = save_coaching_frame_images(
+        input_video_path,
+        features_path,
+        analysis["coaching_items"],
+        run_paths["output_dir"],
+        shooting_side=analysis["shooting_side"],
+    )
 
     result = {
         "run_id": run_paths["run_dir"].name,
@@ -177,6 +377,7 @@ def analyze_video(
         "follow_through_debug_chart_path": follow_through_debug_chart_path,
         "output_path": video_result["output_path"],
         "annotated_video_path": annotated_video_path,
+        "coaching_frame_paths": coaching_frame_paths,
         "video_metadata": video_result["metadata"],
         "analysis": analysis,
         "report_path": None,

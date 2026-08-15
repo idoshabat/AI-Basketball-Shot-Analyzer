@@ -319,6 +319,67 @@ button:disabled {
   margin-top: 14px;
 }
 
+.history-loading {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.history-loading-header,
+.history-refreshing {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  color: var(--teal);
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.history-refreshing {
+  padding: 10px 12px;
+  border: 1px solid rgba(47, 115, 114, 0.18);
+  border-radius: 8px;
+  background: rgba(47, 115, 114, 0.08);
+}
+
+.history-skeleton-list {
+  display: grid;
+  gap: 10px;
+}
+
+.history-skeleton {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) 92px;
+  gap: 14px;
+  align-items: center;
+  min-height: 66px;
+  padding: 12px;
+  border: 1px solid rgba(18, 21, 26, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.64);
+}
+
+.history-skeleton span,
+.history-skeleton div,
+.history-skeleton strong {
+  display: block;
+  height: 16px;
+  overflow: hidden;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, rgba(101, 124, 150, 0.12), rgba(47, 115, 114, 0.22), rgba(101, 124, 150, 0.12));
+  background-size: 220% 100%;
+  animation: shimmer 1.2s ease-in-out infinite;
+}
+
+.history-skeleton span {
+  height: 24px;
+}
+
+.history-skeleton strong {
+  height: 28px;
+}
+
 .history-item {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;
@@ -649,6 +710,12 @@ h2 {
   animation: spin 0.8s linear infinite;
 }
 
+.button-spinner.small {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+}
+
 .processing-note {
   margin: -4px 0 0;
   color: #5f6f7f;
@@ -764,6 +831,16 @@ h2 {
 
   100% {
     transform: translateX(250%);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 120% 0;
+  }
+
+  100% {
+    background-position: -120% 0;
   }
 }
 
@@ -1032,20 +1109,111 @@ h2 {
   font-weight: 850;
 }
 
-.watch-button {
-  min-height: 42px;
+.improvement-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
   align-self: end;
+}
+
+.watch-button,
+.evidence-button {
+  min-height: 42px;
   margin-top: 4px;
   background: var(--teal);
   box-shadow: 0 10px 24px rgba(47, 115, 114, 0.22);
 }
 
-.watch-button:hover:not(:disabled) {
+.watch-button:hover:not(:disabled),
+.evidence-button:hover:not(:disabled) {
   background: #398381;
 }
 
-.watch-button:disabled {
+.evidence-button {
+  background: var(--ink);
+  color: var(--lime);
+  border-color: rgba(201, 255, 87, 0.26);
+  box-shadow: none;
+}
+
+.evidence-button:hover:not(:disabled) {
+  background: #20262d;
+}
+
+.watch-button:disabled,
+.evidence-button:disabled {
   cursor: not-allowed;
+}
+
+.modal-backdrop {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(5, 7, 10, 0.78);
+  backdrop-filter: blur(10px);
+}
+
+.evidence-modal {
+  width: min(980px, 100%);
+  max-height: min(880px, calc(100vh - 48px));
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid rgba(245, 239, 228, 0.2);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(14, 17, 22, 0.98), rgba(21, 26, 31, 0.96)),
+    var(--glass-strong);
+  color: white;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.48);
+}
+
+.evidence-modal img {
+  display: block;
+  width: 100%;
+  max-height: 620px;
+  margin-top: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: #0b0f14;
+  object-fit: contain;
+}
+
+.evidence-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.evidence-details div {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid rgba(245, 239, 228, 0.14);
+  border-left: 4px solid var(--orange);
+  border-radius: 8px;
+  background: rgba(245, 239, 228, 0.08);
+}
+
+.evidence-details span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.evidence-details strong {
+  color: white;
+  font-size: 15px;
+}
+
+.evidence-modal > p {
+  margin: 14px 0 0;
+  color: #d4dde7;
+  font-weight: 750;
 }
 
 .metric-grid {
@@ -1153,6 +1321,8 @@ h2 {
   .comparison-row,
   .comparison-coaching,
   .improvement-list,
+  .improvement-actions,
+  .evidence-details,
   .metric-grid,
   .phase-list,
   .reliability-list {
