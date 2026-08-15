@@ -18,7 +18,7 @@ The goal of this project is not just to detect pose landmarks. It behaves like a
 - Save analysis runs for later review.
 - Compare two saved shots manually.
 - Compare the current shot to the best saved shot automatically.
-- Load a built-in sample result from the frontend for quick demos without uploading a file.
+- Load a built-in sample result, including annotated video, from the frontend for quick demos without uploading a file.
 
 ## Demo Flow
 
@@ -26,7 +26,7 @@ For a quick project walkthrough:
 
 1. Start the backend and frontend.
 2. Open the app at `http://127.0.0.1:5173`.
-3. Click `Load Sample Result` to show the dashboard instantly.
+3. Click `Load Sample Result` to show the dashboard and annotated video instantly.
 4. Upload a real shot video.
 5. Review the score, feedback, improvement priorities, charts, and annotated video.
 6. Click `Compare to Best` after multiple analyses to compare the current shot with the best saved one.
@@ -63,7 +63,7 @@ storage/analyses/<run_id>/
   report.json
 ```
 
-A compact sample result is available at [samples/sample-analysis.json](samples/sample-analysis.json), and the frontend demo data lives at `frontend/public/samples/sample-analysis.json`.
+A compact sample result is available at [samples/sample-analysis.json](samples/sample-analysis.json), and the frontend demo data lives at `frontend/public/samples/sample-analysis.json`. The sample annotated video is served from `frontend/public/samples/sample-annotated.webm`.
 
 ## Setup
 

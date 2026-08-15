@@ -94,6 +94,10 @@
       "end_frame": 240
     }
   ],
-  "files": {},
-  "output_urls": {}
+  "files": {
+    "annotated_video": "/samples/sample-annotated.webm"
+  },
+  "output_urls": {
+    "annotated_video": "/samples/sample-annotated.webm"
+  }
 }

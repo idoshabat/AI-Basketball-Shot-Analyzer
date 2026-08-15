@@ -63,6 +63,18 @@ function formatDelta(value) {
   return value > 0 ? `+${formatted}` : formatted;
 }
 
+function resolveOutputUrl(path) {
+  if (!path) {
+    return null;
+  }
+
+  if (path.startsWith("http://") || path.startsWith("https://") || path.startsWith("/samples/")) {
+    return path;
+  }
+
+  return `${API_BASE_URL}${path}`;
+}
+
 function App() {
   const [file, setFile] = useState(null);
   const [includeAnnotatedVideo, setIncludeAnnotatedVideo] = useState(true);
@@ -78,15 +90,9 @@ function App() {
   const annotatedVideoRef = useRef(null);
   const annotatedVideoSectionRef = useRef(null);
 
-  const chartUrl = result?.output_urls?.angles_chart
-    ? `${API_BASE_URL}${result.output_urls.angles_chart}`
-    : null;
-  const followThroughDebugChartUrl = result?.output_urls?.follow_through_debug_chart
-    ? `${API_BASE_URL}${result.output_urls.follow_through_debug_chart}`
-    : null;
-  const annotatedVideoUrl = result?.output_urls?.annotated_video
-    ? `${API_BASE_URL}${result.output_urls.annotated_video}`
-    : null;
+  const chartUrl = resolveOutputUrl(result?.output_urls?.angles_chart);
+  const followThroughDebugChartUrl = resolveOutputUrl(result?.output_urls?.follow_through_debug_chart);
+  const annotatedVideoUrl = resolveOutputUrl(result?.output_urls?.annotated_video);
 
   const coreMetrics = useMemo(() => {
     if (!result) {
