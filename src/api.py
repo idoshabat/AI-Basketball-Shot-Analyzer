@@ -7,6 +7,8 @@ from pathlib import Path
 import shutil
 import sys
 import time
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 import numpy as np
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
@@ -61,8 +63,6 @@ def decode_base64url(value: str) -> bytes:
 
 def verify_supabase_jwt(token: str) -> dict:
     jwt_secret = os.getenv("SUPABASE_JWT_SECRET")
-    if not jwt_secret:
-        return {"sub": GUEST_USER_ID}
 
     try:
         header_part, payload_part, signature_part = token.split(".")
@@ -72,7 +72,10 @@ def verify_supabase_jwt(token: str) -> dict:
         raise HTTPException(status_code=401, detail="Invalid auth token.") from exc
 
     if header.get("alg") != "HS256":
-        raise HTTPException(status_code=401, detail="Unsupported auth token algorithm.")
+        return verify_supabase_token_with_auth_server(token)
+
+    if not jwt_secret:
+        return verify_supabase_token_with_auth_server(token)
 
     signed_content = f"{header_part}.{payload_part}".encode()
     expected_signature = hmac.new(jwt_secret.encode(), signed_content, hashlib.sha256).digest()
@@ -88,6 +91,38 @@ def verify_supabase_jwt(token: str) -> dict:
         raise HTTPException(status_code=401, detail="Auth token is missing a user id.")
 
     return payload
+
+
+def verify_supabase_token_with_auth_server(token: str) -> dict:
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_anon_key = os.getenv("SUPABASE_ANON_KEY")
+    if not supabase_url or not supabase_anon_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Supabase asymmetric JWT verification requires SUPABASE_URL and SUPABASE_ANON_KEY on the backend.",
+        )
+
+    request = Request(
+        f"{supabase_url.rstrip('/')}/auth/v1/user",
+        headers={
+            "apikey": supabase_anon_key,
+            "Authorization": f"Bearer {token}",
+        },
+    )
+
+    try:
+        with urlopen(request, timeout=8) as response:
+            user = json.loads(response.read().decode())
+    except HTTPError as exc:
+        raise HTTPException(status_code=401, detail="Invalid Supabase auth token.") from exc
+    except (URLError, TimeoutError) as exc:
+        raise HTTPException(status_code=503, detail="Could not verify Supabase auth token.") from exc
+
+    user_id = user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Supabase auth token is missing a user id.")
+
+    return {"sub": user_id, "email": user.get("email")}
 
 
 def get_request_user_id(authorization: str | None = None) -> str:
@@ -385,7 +420,10 @@ def health_check() -> dict:
     return {
         "status": "ok",
         "analysis_version": ANALYSIS_VERSION,
-        "auth_configured": bool(os.getenv("SUPABASE_JWT_SECRET")),
+        "auth_configured": bool(
+            os.getenv("SUPABASE_JWT_SECRET")
+            or (os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_ANON_KEY"))
+        ),
     }
 
 

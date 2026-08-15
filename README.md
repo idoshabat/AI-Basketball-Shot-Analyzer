@@ -136,8 +136,12 @@ VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
 The backend verifies Supabase JWTs when this env var exists:
 
 ```bash
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-supabase-anon-key
 SUPABASE_JWT_SECRET=your-supabase-jwt-secret
 ```
+
+`SUPABASE_URL` and `SUPABASE_ANON_KEY` are required for newer Supabase projects that use asymmetric JWT signing keys such as `ES256` or `RS256`.
 
 If Supabase is not configured, the app runs in `Guest mode`. If it is configured, users can sign in with Google and their saved analyses, comparisons, and best-shot history are scoped to their account.
 
@@ -268,7 +272,7 @@ curl https://ai-basketball-shot-analyzer.onrender.com/health
 
 Both responses should show the same `analysis_version`. If they do not, redeploy the Render backend. The frontend on Vercel only controls the browser UI; the scoring result comes from whichever FastAPI backend it is configured to call.
 
-`/health` also returns `auth_configured`. On Render, it should be `true` once `SUPABASE_JWT_SECRET` is set.
+`/health` also returns `auth_configured`. On Render, it should be `true` once Supabase backend env vars are set.
 
 For a faster hosted demo:
 
