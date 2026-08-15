@@ -91,6 +91,14 @@ function resolveOutputUrl(path) {
   return `${API_BASE_URL}${path}`;
 }
 
+function getRequestErrorMessage(error) {
+  if (error instanceof TypeError && error.message === "Failed to fetch") {
+    return `Could not reach the backend at ${API_BASE_URL}. Check Render status, VITE_API_BASE_URL, and CORS_ORIGINS/CORS_ORIGIN_REGEX.`;
+  }
+
+  return error.message;
+}
+
 function getUserName(session) {
   return session?.user?.user_metadata?.full_name || session?.user?.email || "Signed-in player";
 }
@@ -190,7 +198,7 @@ function App() {
 
       setAnalysisHistory(data);
     } catch (historyError) {
-      setError(historyError.message);
+      setError(getRequestErrorMessage(historyError));
     } finally {
       setIsLoadingHistory(false);
     }
@@ -209,7 +217,7 @@ function App() {
 
       setResult(data);
     } catch (savedAnalysisError) {
-      setError(savedAnalysisError.message);
+      setError(getRequestErrorMessage(savedAnalysisError));
     }
   }
 
@@ -246,7 +254,7 @@ function App() {
 
       setComparison(data);
     } catch (compareError) {
-      setError(compareError.message);
+      setError(getRequestErrorMessage(compareError));
     } finally {
       setIsComparing(false);
     }
@@ -271,7 +279,7 @@ function App() {
 
       setComparison(data);
     } catch (bestComparisonError) {
-      setError(bestComparisonError.message);
+      setError(getRequestErrorMessage(bestComparisonError));
     } finally {
       setIsComparingBest(false);
     }
@@ -303,7 +311,7 @@ function App() {
       }
       loadAnalysisHistory();
     } catch (deleteError) {
-      setError(deleteError.message);
+      setError(getRequestErrorMessage(deleteError));
     }
   }
 
@@ -423,7 +431,7 @@ function App() {
       setResult(data);
       loadAnalysisHistory();
     } catch (requestError) {
-      setError(requestError.message);
+      setError(getRequestErrorMessage(requestError));
     } finally {
       setIsAnalyzing(false);
     }

@@ -28,6 +28,7 @@ DEFAULT_CORS_ORIGINS = [
     "https://ai-basketball-shot-analyzer.vercel.app",
     "https://ai-basketball-shot-analyzer-edb2.vercel.app",
 ]
+DEFAULT_CORS_ORIGIN_REGEX = r"https://.*\.vercel\.app|http://127\.0\.0\.1:5173|http://localhost:5173"
 DEFAULT_ANALYSIS_RETENTION_DAYS = 7
 GUEST_USER_ID = "guest"
 
@@ -43,6 +44,10 @@ def get_cors_origins() -> list[str]:
         return DEFAULT_CORS_ORIGINS
 
     return [origin.strip().rstrip("/") for origin in env_origins.split(",") if origin.strip()]
+
+
+def get_cors_origin_regex() -> str | None:
+    return os.getenv("CORS_ORIGIN_REGEX", DEFAULT_CORS_ORIGIN_REGEX)
 
 
 def get_analysis_retention_days() -> int:
@@ -146,6 +151,7 @@ app = FastAPI(title="AI Basketball Shot Analyzer")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_cors_origins(),
+    allow_origin_regex=get_cors_origin_regex(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
