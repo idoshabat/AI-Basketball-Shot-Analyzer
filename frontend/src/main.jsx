@@ -50,14 +50,30 @@ function formatRunDate(value) {
   return value;
 }
 
+function formatDelta(value) {
+  if (value === null || value === undefined) {
+    return "N/A";
+  }
+
+  if (typeof value !== "number") {
+    return String(value);
+  }
+
+  const formatted = Number.isInteger(value) ? value.toString() : value.toFixed(2);
+  return value > 0 ? `+${formatted}` : formatted;
+}
+
 function App() {
   const [file, setFile] = useState(null);
   const [includeAnnotatedVideo, setIncludeAnnotatedVideo] = useState(true);
   const [result, setResult] = useState(null);
   const [analysisHistory, setAnalysisHistory] = useState([]);
+  const [selectedComparisonRuns, setSelectedComparisonRuns] = useState([]);
+  const [comparison, setComparison] = useState(null);
   const [error, setError] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isComparing, setIsComparing] = useState(false);
   const annotatedVideoRef = useRef(null);
   const annotatedVideoSectionRef = useRef(null);
 
@@ -142,6 +158,43 @@ function App() {
     }
   }
 
+  function toggleComparisonRun(runId) {
+    setSelectedComparisonRuns((currentRuns) => {
+      if (currentRuns.includes(runId)) {
+        return currentRuns.filter((selectedRunId) => selectedRunId !== runId);
+      }
+
+      return [...currentRuns, runId].slice(-2);
+    });
+  }
+
+  async function compareSelectedRuns() {
+    if (selectedComparisonRuns.length !== 2) {
+      setError("Choose exactly two analyses to compare.");
+      return;
+    }
+
+    setIsComparing(true);
+    setError("");
+    try {
+      const params = new URLSearchParams({
+        run_a: selectedComparisonRuns[0],
+        run_b: selectedComparisonRuns[1],
+      });
+      const response = await fetch(`${API_BASE_URL}/analyses/compare?${params}`);
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Could not compare analyses.");
+      }
+
+      setComparison(data);
+    } catch (compareError) {
+      setError(compareError.message);
+    } finally {
+      setIsComparing(false);
+    }
+  }
+
   async function deleteSavedAnalysis(analysis) {
     const shouldDelete = window.confirm(`Delete analysis "${analysis.run_id}"? This cannot be undone.`);
     if (!shouldDelete) {
@@ -160,6 +213,10 @@ function App() {
 
       if (result?.run_id === analysis.run_id) {
         setResult(null);
+      }
+      setSelectedComparisonRuns((currentRuns) => currentRuns.filter((runId) => runId !== analysis.run_id));
+      if (comparison?.first?.run_id === analysis.run_id || comparison?.second?.run_id === analysis.run_id) {
+        setComparison(null);
       }
       loadAnalysisHistory();
     } catch (deleteError) {
@@ -240,25 +297,63 @@ function App() {
             </label>
 
             <button type="submit" disabled={isAnalyzing}>
-              {isAnalyzing ? "Analyzing..." : "Analyze Shot"}
+              {isAnalyzing && <span className="button-spinner" aria-hidden="true" />}
+              <span>{isAnalyzing ? "Analyzing shot..." : "Analyze Shot"}</span>
             </button>
+            <p className="processing-note">
+              Analysis can take a few minutes on the hosted backend, especially when annotated video is enabled.
+            </p>
           </form>
 
           {error && <p className="error-text">{error}</p>}
         </div>
 
+        {isAnalyzing && (
+          <section className="loading-panel" aria-live="polite">
+            <div className="loading-spinner" aria-hidden="true" />
+            <div>
+              <h2>Analyzing your shot</h2>
+              <p>
+                The backend is processing pose detection, metrics, charts, and optional annotated video. This can take a few
+                minutes on Render's low-CPU instance.
+              </p>
+              <div className="loading-bar" aria-hidden="true">
+                <span />
+              </div>
+            </div>
+          </section>
+        )}
+
         <section className="history-panel">
           <div className="section-header">
             <h2>Recent Analyses</h2>
-            <button className="secondary-button" type="button" onClick={loadAnalysisHistory} disabled={isLoadingHistory}>
-              {isLoadingHistory ? "Loading..." : "Refresh"}
-            </button>
+            <div className="header-actions">
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={compareSelectedRuns}
+                disabled={isComparing || selectedComparisonRuns.length !== 2}
+              >
+                {isComparing ? "Comparing..." : "Compare"}
+              </button>
+              <button className="secondary-button" type="button" onClick={loadAnalysisHistory} disabled={isLoadingHistory}>
+                {isLoadingHistory ? "Loading..." : "Refresh"}
+              </button>
+            </div>
           </div>
 
           {analysisHistory.length > 0 ? (
             <div className="history-list">
               {analysisHistory.map((analysis) => (
                 <article className="history-item" key={analysis.run_id}>
+                  <label className="compare-check">
+                    <input
+                      type="checkbox"
+                      checked={selectedComparisonRuns.includes(analysis.run_id)}
+                      onChange={() => toggleComparisonRun(analysis.run_id)}
+                    />
+                    <span>Compare</span>
+                  </label>
                   <div>
                     <strong>{analysis.video}</strong>
                     <span>{formatRunDate(analysis.created_at)}</span>
@@ -282,6 +377,61 @@ function App() {
             <p className="empty-state">No saved analyses yet.</p>
           )}
         </section>
+
+        {comparison && (
+          <section className="comparison-panel">
+            <div className="section-header">
+              <div>
+                <h2>Shot Comparison</h2>
+                <p className="subtle">
+                  {comparison.first.run_id} vs {comparison.second.run_id}
+                </p>
+              </div>
+              <div className={`comparison-score ${comparison.score_delta >= 0 ? "positive" : "negative"}`}>
+                {formatDelta(comparison.score_delta)}
+              </div>
+            </div>
+
+            <div className="comparison-summary">
+              <div>
+                <span>First Shot</span>
+                <strong>{comparison.first.score}</strong>
+              </div>
+              <div>
+                <span>Second Shot</span>
+                <strong>{comparison.second.score}</strong>
+              </div>
+            </div>
+
+            <div className="comparison-table">
+              {comparison.metrics.map((metric) => (
+                <div className="comparison-row" key={metric.key}>
+                  <span>{metric.label}</span>
+                  <strong>{formatMetric(metric.first)}</strong>
+                  <strong>{formatMetric(metric.second)}</strong>
+                  <strong className={metric.delta === null || metric.delta === undefined ? "" : metric.delta >= 0 ? "positive-text" : "negative-text"}>
+                    {formatDelta(metric.delta)}
+                  </strong>
+                </div>
+              ))}
+            </div>
+
+            <div className="comparison-coaching">
+              <div>
+                <h3>First Shot Priorities</h3>
+                {comparison.coaching_items.first.map((item) => (
+                  <p key={`${comparison.first.run_id}-${item.metric}-${item.title}`}>{item.title}</p>
+                ))}
+              </div>
+              <div>
+                <h3>Second Shot Priorities</h3>
+                {comparison.coaching_items.second.map((item) => (
+                  <p key={`${comparison.second.run_id}-${item.metric}-${item.title}`}>{item.title}</p>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
 
         {result && (
           <div className="results-grid">

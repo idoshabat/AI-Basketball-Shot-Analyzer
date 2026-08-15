@@ -238,6 +238,60 @@ def summarize_report(report: dict) -> dict:
     )
 
 
+def metric_comparison(
+    first_metrics: dict,
+    second_metrics: dict,
+    key: str,
+    label: str,
+    digits: int = 3,
+) -> dict:
+    first_value = first_metrics.get(key)
+    second_value = second_metrics.get(key)
+    delta = None
+
+    if isinstance(first_value, (int, float)) and isinstance(second_value, (int, float)):
+        delta = round(second_value - first_value, digits)
+
+    return {
+        "key": key,
+        "label": label,
+        "first": first_value,
+        "second": second_value,
+        "delta": delta,
+    }
+
+
+def compare_reports(first_report: dict, second_report: dict) -> dict:
+    first = build_saved_analysis_response(first_report)
+    second = build_saved_analysis_response(second_report)
+    first_metrics = first.get("metrics", {})
+    second_metrics = second.get("metrics", {})
+
+    metric_rows = [
+        metric_comparison(first_metrics, second_metrics, "release_confidence", "Release Confidence", digits=2),
+        metric_comparison(first_metrics, second_metrics, "release_elbow_angle", "Release Elbow Angle", digits=2),
+        metric_comparison(first_metrics, second_metrics, "follow_through_frames", "Follow-Through Frames", digits=0),
+        metric_comparison(first_metrics, second_metrics, "follow_through_ratio", "Follow-Through Ratio", digits=2),
+        metric_comparison(first_metrics, second_metrics, "hip_rise", "Hip Rise", digits=3),
+        metric_comparison(first_metrics, second_metrics, "ankle_lift", "Ankle Lift", digits=3),
+        metric_comparison(first_metrics, second_metrics, "min_knee_angle", "Deepest Knee Angle", digits=2),
+        metric_comparison(first_metrics, second_metrics, "elbow_angle_std", "Arm Motion Variation", digits=2),
+    ]
+
+    return make_json_safe(
+        {
+            "first": first,
+            "second": second,
+            "score_delta": second.get("score") - first.get("score"),
+            "metrics": metric_rows,
+            "coaching_items": {
+                "first": first.get("coaching_items", []),
+                "second": second.get("coaching_items", []),
+            },
+        }
+    )
+
+
 def make_json_safe(value):
     if isinstance(value, dict):
         return {key: make_json_safe(item) for key, item in value.items()}
@@ -276,6 +330,14 @@ def list_analyses(limit: int = 20) -> list[dict]:
             summaries.append(summarize_report(json.load(report_file)))
 
     return summaries
+
+
+@app.get("/analyses/compare")
+def compare_analyses(run_a: str, run_b: str) -> dict:
+    if run_a == run_b:
+        raise HTTPException(status_code=400, detail="Choose two different analysis runs.")
+
+    return compare_reports(load_report(run_a), load_report(run_b))
 
 
 @app.get("/analyses/{run_id}")
