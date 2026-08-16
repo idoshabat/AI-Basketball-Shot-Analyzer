@@ -1,10 +1,11 @@
+import http.client
 import json
 import mimetypes
 import os
 from copy import deepcopy
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
 
@@ -12,6 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_TABLE = "analyses"
 DEFAULT_BUCKET = "shot-analyses"
 SIGNED_URL_EXPIRES_SECONDS = 60 * 60 * 24
+UPLOAD_CHUNK_SIZE = 1024 * 1024
 DEFAULT_PERSISTED_FILE_KEYS = {
     "angles_chart",
     "follow_through_debug_chart",
@@ -107,21 +109,30 @@ def upload_file(object_path: str, local_path: str) -> None:
         "x-upsert": "true",
     }
     quoted_path = quote(object_path, safe="/")
-    request = Request(
-        f"{supabase_url.rstrip('/')}/storage/v1/object/{get_bucket_name()}/{quoted_path}",
-        data=path.read_bytes(),
-        headers=headers,
-        method="POST",
-    )
+    parsed_url = urlparse(supabase_url)
+    request_path = f"{parsed_url.path.rstrip('/')}/storage/v1/object/{get_bucket_name()}/{quoted_path}"
+    connection_class = http.client.HTTPSConnection if parsed_url.scheme == "https" else http.client.HTTPConnection
+    connection = connection_class(parsed_url.netloc, timeout=120)
 
     try:
-        with urlopen(request, timeout=120) as response:
-            response.read()
-    except HTTPError as exc:
-        detail = exc.read().decode() or exc.reason
-        raise SupabaseStoreError(f"Supabase storage upload failed: {detail}") from exc
-    except (URLError, TimeoutError) as exc:
+        connection.putrequest("POST", request_path)
+        connection.putheader("Content-Length", str(path.stat().st_size))
+        for name, value in headers.items():
+            connection.putheader(name, value)
+        connection.endheaders()
+
+        with path.open("rb") as upload_file:
+            while chunk := upload_file.read(UPLOAD_CHUNK_SIZE):
+                connection.send(chunk)
+
+        response = connection.getresponse()
+        response_body = response.read().decode(errors="replace")
+        if response.status < 200 or response.status >= 300:
+            raise SupabaseStoreError(f"Supabase storage upload failed: {response_body or response.reason}")
+    except (OSError, TimeoutError, http.client.HTTPException) as exc:
         raise SupabaseStoreError("Could not upload file to Supabase Storage.") from exc
+    finally:
+        connection.close()
 
 
 def signed_url(object_path: str) -> str:

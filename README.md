@@ -68,7 +68,7 @@ storage/analyses/<run_id>/
 In deployed mode, Supabase becomes the persistent source of truth:
 
 - Supabase Postgres stores the analysis report, score, metadata, metrics, feedback, and owner user id.
-- Supabase Storage stores the original video, keypoint/features CSVs, charts, annotated video, and report JSON.
+- Supabase Storage stores the UI assets by default: charts, annotated video, and evidence frame images. Original videos, CSVs, and debug files are optional to keep Render memory usage lower.
 - The API returns signed Storage URLs for saved media so Vercel and Render are no longer dependent on Render's temporary filesystem.
 
 A compact sample result is available at [samples/sample-analysis.json](samples/sample-analysis.json), and the frontend demo data lives at `frontend/public/samples/sample-analysis.json`. The sample annotated video is served from `frontend/public/samples/sample-annotated.webm`.
@@ -148,11 +148,16 @@ SUPABASE_JWT_SECRET=your-supabase-jwt-secret
 SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
 SUPABASE_ANALYSES_TABLE=analyses
 SUPABASE_STORAGE_BUCKET=shot-analyses
+SUPABASE_UPLOAD_ANNOTATED_VIDEO=true
+SUPABASE_UPLOAD_ORIGINAL_VIDEO=false
+SUPABASE_UPLOAD_DEBUG_FILES=false
 ```
 
 `SUPABASE_URL` and `SUPABASE_ANON_KEY` are required for newer Supabase projects that use asymmetric JWT signing keys such as `ES256` or `RS256`.
 
 `SUPABASE_SERVICE_ROLE_KEY` is required only on the backend. Keep it secret and set it in Render, never in Vercel. The backend uses it to write reports to Postgres and upload analysis files to Supabase Storage.
+
+For low-memory Render instances, keep `SUPABASE_UPLOAD_ORIGINAL_VIDEO=false` and `SUPABASE_UPLOAD_DEBUG_FILES=false`. Large files are uploaded with streaming, but skipping non-UI files still keeps the service much more stable.
 
 Create the required table and storage bucket by running [supabase/schema.sql](supabase/schema.sql) in the Supabase SQL editor.
 

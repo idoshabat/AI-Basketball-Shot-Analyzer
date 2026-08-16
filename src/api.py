@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import shutil
 import sys
+import threading
 import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -37,6 +38,9 @@ sys.path.insert(0, str(SRC_DIR))
 from analyze_video import ANALYSIS_VERSION, analyze_video, create_analysis_run, format_path
 from shot_analyzer import normalize_camera_view
 import supabase_store
+
+
+PERSISTENCE_LOCK = threading.Lock()
 
 
 def get_cors_origins() -> list[str]:
@@ -333,9 +337,10 @@ def load_report_for_user(run_id: str, user_id: str) -> dict:
 
 def persist_report_in_background(report_path: str | Path) -> None:
     try:
-        with Path(report_path).open() as report_file:
-            report = json.load(report_file)
-        supabase_store.persist_report(report)
+        with PERSISTENCE_LOCK:
+            with Path(report_path).open() as report_file:
+                report = json.load(report_file)
+            supabase_store.persist_report(report)
     except Exception as exc:
         print(f"Supabase persistence failed for {report_path}: {exc}")
 
