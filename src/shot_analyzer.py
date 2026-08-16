@@ -21,11 +21,76 @@ def resolve_features_path(csv_path: str) -> Path:
     raise FileNotFoundError(f"Features CSV file not found: {csv_path}")
 
 
-def get_shooting_side(df: pd.DataFrame) -> str:
-    right_max = df["right_elbow_angle"].max()
-    left_max = df["left_elbow_angle"].max()
+def calculate_shooting_side_score(df: pd.DataFrame, side: str) -> dict:
+    elbow_column = f"{side}_elbow_angle"
+    wrist_x_column = f"{side}_wrist_x"
+    wrist_y_column = f"{side}_wrist_y"
+    shoulder_y_column = f"{side}_shoulder_y"
 
-    return "right" if right_max >= left_max else "left"
+    required_columns = {elbow_column, wrist_x_column, wrist_y_column, shoulder_y_column}
+    if not required_columns.issubset(df.columns):
+        return {"score": 0.0, "max_elbow_angle": 0.0}
+
+    max_elbow_angle = float(df[elbow_column].max())
+    wrist_y_range = float(df[wrist_y_column].max() - df[wrist_y_column].min())
+    wrist_x_range = float(df[wrist_x_column].max() - df[wrist_x_column].min())
+    highest_wrist_y = float(df[wrist_y_column].min())
+    wrist_above_shoulder_ratio = float((df[wrist_y_column] < df[shoulder_y_column]).mean())
+    extended_threshold = max(150.0, max_elbow_angle - 20.0)
+    high_extended_ratio = float(
+        ((df[elbow_column] >= extended_threshold) & (df[wrist_y_column] < df[shoulder_y_column])).mean()
+    )
+
+    try:
+        release_row, release_method = find_release_row(df, side)
+        release_elbow_angle = float(release_row[elbow_column])
+    except Exception:
+        release_method = "unavailable"
+        release_elbow_angle = max_elbow_angle
+
+    score = (
+        0.26 * min(1.0, max_elbow_angle / 180.0)
+        + 0.22 * min(1.0, release_elbow_angle / 180.0)
+        + 0.18 * min(1.0, wrist_y_range / 0.28)
+        + 0.12 * min(1.0, wrist_x_range / 0.18)
+        + 0.12 * max(0.0, min(1.0, 1.0 - highest_wrist_y))
+        + 0.06 * min(1.0, wrist_above_shoulder_ratio * 2.0)
+        + 0.04 * min(1.0, high_extended_ratio * 3.0)
+    )
+
+    return {
+        "score": round(score, 4),
+        "max_elbow_angle": round(max_elbow_angle, 2),
+        "release_elbow_angle": round(release_elbow_angle, 2),
+        "wrist_y_range": round(wrist_y_range, 4),
+        "wrist_x_range": round(wrist_x_range, 4),
+        "highest_wrist_y": round(highest_wrist_y, 4),
+        "wrist_above_shoulder_ratio": round(wrist_above_shoulder_ratio, 4),
+        "high_extended_ratio": round(high_extended_ratio, 4),
+        "release_method": release_method,
+    }
+
+
+def get_shooting_side_details(df: pd.DataFrame) -> dict:
+    right_score = calculate_shooting_side_score(df, "right")
+    left_score = calculate_shooting_side_score(df, "left")
+    right_value = right_score["score"]
+    left_value = left_score["score"]
+    side = "right" if right_value >= left_value else "left"
+    gap = abs(right_value - left_value)
+
+    return {
+        "side": side,
+        "confidence": round(min(1.0, gap / 0.12), 2),
+        "right_score": right_value,
+        "left_score": left_value,
+        "right_signals": right_score,
+        "left_signals": left_score,
+    }
+
+
+def get_shooting_side(df: pd.DataFrame) -> str:
+    return get_shooting_side_details(df)["side"]
 
 
 def score_elbow_extension(max_elbow_angle: float) -> tuple[int, str]:
@@ -1287,7 +1352,8 @@ def analyze_shot(features_csv_path: str, camera_view: str = "side") -> dict:
     if df.empty:
         raise ValueError(f"No valid feature rows found in: {path}")
 
-    shooting_side = get_shooting_side(df)
+    shooting_side_details = get_shooting_side_details(df)
+    shooting_side = shooting_side_details["side"]
     elbow_column = f"{shooting_side}_elbow_angle"
     knee_column = f"{shooting_side}_knee_angle"
 
@@ -1367,6 +1433,13 @@ def analyze_shot(features_csv_path: str, camera_view: str = "side") -> dict:
         "release_detection_method": release_detection_method,
         "release_confidence": release_confidence,
         "release_confidence_label": release_confidence_label,
+        "shooting_side_confidence": shooting_side_details["confidence"],
+        "right_shooting_side_score": shooting_side_details["right_score"],
+        "left_shooting_side_score": shooting_side_details["left_score"],
+        "shooting_side_signals": {
+            "right": shooting_side_details["right_signals"],
+            "left": shooting_side_details["left_signals"],
+        },
         "release_elbow_angle": release_elbow_angle,
         "release_knee_angle": release_knee_angle,
         "release_wrist_y": release_wrist_y,
