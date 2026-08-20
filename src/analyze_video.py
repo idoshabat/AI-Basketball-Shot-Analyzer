@@ -381,6 +381,34 @@ def draw_horizontal_reference(frame, row: dict, point_names: list[str], color: t
     cv2.putText(frame, label, (x1, max(76, y - 12)), cv2.FONT_HERSHEY_SIMPLEX, 0.58, color, 2, cv2.LINE_AA)
 
 
+def draw_reference_through_point(frame, point: tuple[int, int], color: tuple[int, int, int], label: str) -> None:
+    _, width = frame.shape[:2]
+    x, y = point
+    x1 = max(0, x - 80)
+    x2 = min(width - 1, x + 80)
+    cv2.line(frame, (x1, y), (x2, y), color, 3, cv2.LINE_AA)
+    cv2.putText(frame, label, (x1, max(76, y - 12)), cv2.FONT_HERSHEY_SIMPLEX, 0.54, color, 2, cv2.LINE_AA)
+
+
+def draw_shot_direction_reference(frame, row: dict, color: tuple[int, int, int]) -> None:
+    height, width = frame.shape[:2]
+    foot_points = [
+        point_from_row(row, "left_foot_index", width, height),
+        point_from_row(row, "right_foot_index", width, height),
+        point_from_row(row, "left_heel", width, height),
+        point_from_row(row, "right_heel", width, height),
+    ]
+    foot_points = [point for point in foot_points if point]
+    if not foot_points:
+        return
+
+    y = int(sum(point[1] for point in foot_points) / len(foot_points))
+    x1 = max(0, min(point[0] for point in foot_points) - 140)
+    x2 = min(width - 1, max(point[0] for point in foot_points) + 140)
+    cv2.line(frame, (x1, y), (x2, y), color, 3, cv2.LINE_AA)
+    cv2.putText(frame, "shot-line direction", (x1, max(76, y - 14)), cv2.FONT_HERSHEY_SIMPLEX, 0.56, color, 2, cv2.LINE_AA)
+
+
 def draw_vertical_reference(frame, point: tuple[int, int], color: tuple[int, int, int], label: str) -> None:
     height, _ = frame.shape[:2]
     x, y = point
@@ -400,7 +428,13 @@ def draw_evidence_overlay(frame, row: dict | None, item: dict, shooting_side: st
     neutral = (255, 255, 255)
     height, width = frame.shape[:2]
 
-    if metric in {"release_elbow_angle", "elbow_angle_std", "follow_through_frames", "follow_through_ratio"}:
+    if metric in {
+        "release_elbow_angle",
+        "elbow_angle_std",
+        "shooting_motion_elbow_angle_std",
+        "follow_through_frames",
+        "follow_through_ratio",
+    }:
         draw_points_and_lines(frame, row, [f"{side}_shoulder", f"{side}_elbow", f"{side}_wrist"], highlight, "Shooting arm")
         wrist = point_from_row(row, f"{side}_wrist", width, height)
         if wrist:
@@ -413,15 +447,46 @@ def draw_evidence_overlay(frame, row: dict | None, item: dict, shooting_side: st
         draw_horizontal_reference(frame, row, [f"{side}_ankle", f"{other_side}_ankle"], warning, "ankle line")
         return
 
-    if metric in {"left_shin_vertical_error", "right_shin_vertical_error", "shin_parallel_error"}:
+    if metric in {
+        "left_shin_vertical_error",
+        "right_shin_vertical_error",
+        "shin_parallel_error",
+        "load_knee_alignment_error",
+        "load_left_shin_vertical_error",
+        "load_right_shin_vertical_error",
+        "load_shin_parallel_error",
+    }:
         draw_points_and_lines(frame, row, ["left_knee", "left_ankle"], highlight, "left shin")
         draw_points_and_lines(frame, row, ["right_knee", "right_ankle"], warning, "right shin")
         return
 
-    if metric in {"foot_parallel_error", "left_foot_angle_to_floor", "right_foot_angle_to_floor"}:
+    if metric in {
+        "foot_direction_error",
+        "load_foot_direction_error",
+        "foot_parallel_error",
+        "load_foot_parallel_error",
+        "left_foot_angle_to_floor",
+        "right_foot_angle_to_floor",
+        "left_foot_floor_error",
+        "right_foot_floor_error",
+        "load_left_foot_floor_error",
+        "load_right_foot_floor_error",
+    }:
+        draw_points_and_lines(frame, row, ["left_heel", "left_foot_index"], highlight, "left foot direction")
+        draw_points_and_lines(frame, row, ["right_heel", "right_foot_index"], warning, "right foot direction")
+        draw_shot_direction_reference(frame, row, neutral)
+        return
+
+    if metric == "foot_stagger_error":
         draw_points_and_lines(frame, row, ["left_heel", "left_foot_index"], highlight, "left foot")
         draw_points_and_lines(frame, row, ["right_heel", "right_foot_index"], warning, "right foot")
-        draw_horizontal_reference(frame, row, ["left_foot_index", "right_foot_index"], neutral, "floor reference")
+        left_foot = point_from_row(row, "left_foot_index", width, height)
+        right_foot = point_from_row(row, "right_foot_index", width, height)
+        if left_foot:
+            draw_reference_through_point(frame, left_foot, neutral, "square line")
+        if right_foot:
+            draw_reference_through_point(frame, right_foot, neutral, "square line")
+        draw_horizontal_reference(frame, row, ["left_foot_index", "right_foot_index"], warning, "same line target")
         return
 
     if metric in {"forearm_vertical_error", "follow_through_vertical_error"}:
@@ -455,11 +520,11 @@ def save_coaching_frame_images(
     try:
         total_frames = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
         for index, item in enumerate(coaching_items, start=1):
-            start_frame = item.get("start_frame")
-            if start_frame is None:
+            frame_source = item.get("evidence_frame") or item.get("start_frame")
+            if frame_source is None:
                 continue
 
-            frame_number = max(1, int(start_frame))
+            frame_number = max(1, int(frame_source))
             if total_frames:
                 frame_number = min(frame_number, total_frames)
 

@@ -137,10 +137,32 @@ def score_knee_bend(min_knee_angle: float) -> tuple[int, str]:
 
 def score_consistency(elbow_angle_std: float) -> tuple[int, str]:
     if elbow_angle_std <= 25:
-        return 15, "Arm motion looks fairly consistent."
+        return 15, "Shooting-arm motion looks fairly smooth."
     if elbow_angle_std <= 45:
-        return 10, "Arm motion has some variation."
-    return 6, "Arm motion looks very inconsistent across the shot."
+        return 10, "Shooting-arm motion has some variation."
+    return 6, "Shooting-arm motion looks uneven during the shot."
+
+
+def measure_shooting_arm_motion(df: pd.DataFrame, elbow_column: str, start_frame: int, end_frame: int) -> dict:
+    motion_df = df[(df["frame"] >= start_frame) & (df["frame"] <= end_frame)].copy()
+    if motion_df.empty:
+        motion_df = df.copy()
+
+    motion_df["smoothed_elbow_angle"] = (
+        motion_df[elbow_column]
+        .rolling(window=5, center=True, min_periods=1)
+        .mean()
+    )
+    elbow_angle_std = float(motion_df["smoothed_elbow_angle"].std() or 0.0)
+    median_angle = float(motion_df["smoothed_elbow_angle"].median())
+    evidence_row = motion_df.loc[(motion_df["smoothed_elbow_angle"] - median_angle).abs().idxmax()]
+
+    return {
+        "shooting_motion_start_frame": int(motion_df["frame"].min()),
+        "shooting_motion_end_frame": int(motion_df["frame"].max()),
+        "shooting_motion_elbow_angle_std": elbow_angle_std,
+        "shooting_motion_elbow_variation_frame": int(evidence_row["frame"]),
+    }
 
 
 def score_release_extension(release_elbow_angle: float) -> tuple[int, str]:
@@ -670,6 +692,63 @@ def measure_alignment(df: pd.DataFrame, shooting_side: str, release_frame: int) 
     }
 
 
+def prefix_metrics(metrics: dict, prefix: str) -> dict:
+    return {f"{prefix}_{key}": value for key, value in metrics.items()}
+
+
+def foot_stagger_for_row(row: pd.Series) -> dict:
+    body_width = get_body_width(row)
+    body_height_values = [
+        safe_column_value(row, "left_shoulder_y"),
+        safe_column_value(row, "right_shoulder_y"),
+        safe_column_value(row, "left_ankle_y"),
+        safe_column_value(row, "right_ankle_y"),
+    ]
+    body_height_values = [value for value in body_height_values if value is not None]
+    body_height = max(body_height_values) - min(body_height_values) if len(body_height_values) >= 2 else body_width
+    body_height = max(body_height, 0.1)
+
+    left_foot_y = safe_column_value(row, "left_foot_index_y")
+    right_foot_y = safe_column_value(row, "right_foot_index_y")
+    left_ankle_y = safe_column_value(row, "left_ankle_y")
+    right_ankle_y = safe_column_value(row, "right_ankle_y")
+    foot_y_delta = None if left_foot_y is None or right_foot_y is None else abs(left_foot_y - right_foot_y)
+    ankle_y_delta = None if left_ankle_y is None or right_ankle_y is None else abs(left_ankle_y - right_ankle_y)
+    stagger_delta = max(value for value in (foot_y_delta, ankle_y_delta) if value is not None) if foot_y_delta is not None or ankle_y_delta is not None else None
+
+    return {
+        "foot_stagger_error": None if stagger_delta is None else float(stagger_delta / body_height),
+        "foot_stagger_y_delta": stagger_delta,
+    }
+
+
+def measure_foot_stagger(df: pd.DataFrame, start_frame: int, end_frame: int | None = None) -> dict:
+    end_frame = end_frame if end_frame is not None else start_frame
+    window = df[(df["frame"] >= start_frame) & (df["frame"] <= end_frame)]
+    if window.empty:
+        window = df[df["frame"] == start_frame]
+    if window.empty:
+        window = df.iloc[[len(df) // 2]]
+
+    best = {
+        "foot_stagger_error": None,
+        "foot_stagger_y_delta": None,
+        "foot_stagger_frame": start_frame,
+    }
+    for _, row in window.iterrows():
+        current = foot_stagger_for_row(row)
+        current_error = current["foot_stagger_error"]
+        if current_error is None:
+            continue
+        if best["foot_stagger_error"] is None or current_error > best["foot_stagger_error"]:
+            best = {
+                **current,
+                "foot_stagger_frame": int(row["frame"]),
+            }
+
+    return best
+
+
 def score_alignment(metrics: dict) -> tuple[int, list[str]]:
     if metrics.get("alignment_status") == "missing_landmark_x_features":
         return 30, ["Alignment metrics need newly extracted landmark x-coordinates for this camera view."]
@@ -750,6 +829,47 @@ def score_alignment(metrics: dict) -> tuple[int, list[str]]:
     return score, feedback
 
 
+def score_load_base_alignment(metrics: dict) -> dict:
+    if not metrics:
+        return {"score": 15, "penalty": 0, "status": "unavailable"}
+
+    load_shin_error = max(
+        metrics.get("load_left_shin_vertical_error") or 0,
+        metrics.get("load_right_shin_vertical_error") or 0,
+        metrics.get("load_shin_parallel_error") or 0,
+    )
+    load_knee_alignment_error = (metrics.get("load_knee_to_ankle_alignment_error") or 0) * 100
+    foot_direction_error = max(
+        metrics.get("load_foot_parallel_error") or 0,
+        metrics.get("load_left_foot_floor_error") or 0,
+        metrics.get("load_right_foot_floor_error") or 0,
+    )
+    foot_stagger_error = (metrics.get("foot_stagger_error") or 0) * 100
+
+    knee_penalty = max(0.0, min(5.0, (max(load_shin_error, load_knee_alignment_error) - 10) / 2.2))
+    direction_penalty = max(0.0, min(6.0, (foot_direction_error - 12) / 6.5))
+    stagger_penalty = max(0.0, min(4.0, (foot_stagger_error - 4.5) / 1.2))
+    total_penalty = min(15.0, knee_penalty + direction_penalty + stagger_penalty)
+
+    if total_penalty >= 10:
+        status = "poor"
+    elif total_penalty >= 5:
+        status = "needs_work"
+    elif total_penalty > 0:
+        status = "minor_issue"
+    else:
+        status = "good"
+
+    return {
+        "score": round(max(0.0, 15.0 - total_penalty), 2),
+        "penalty": round(total_penalty, 2),
+        "status": status,
+        "knee_penalty": round(knee_penalty, 2),
+        "foot_direction_penalty": round(direction_penalty, 2),
+        "foot_stagger_penalty": round(stagger_penalty, 2),
+    }
+
+
 def build_coaching_item(
     title: str,
     severity: str,
@@ -761,6 +881,7 @@ def build_coaching_item(
     phase: str,
     start_frame: int | None,
     end_frame: int | None,
+    evidence_frame: int | None = None,
 ) -> dict:
     return {
         "title": title,
@@ -773,6 +894,7 @@ def build_coaching_item(
         "phase": phase,
         "start_frame": start_frame,
         "end_frame": end_frame,
+        "evidence_frame": evidence_frame,
     }
 
 
@@ -868,34 +990,108 @@ def build_coaching_items(metrics: dict, phases: dict, camera_view: str = "side")
                 )
             )
 
-        foot_error = metrics.get("foot_parallel_error")
-        if foot_error is not None and foot_error > 24:
+        load_shin_error = max(
+            metrics.get("load_left_shin_vertical_error") or 0,
+            metrics.get("load_right_shin_vertical_error") or 0,
+        )
+        load_shin_parallel_error = metrics.get("load_shin_parallel_error") or 0
+        load_knee_alignment_error = metrics.get("load_knee_to_ankle_alignment_error") or 0
+        if load_shin_error > 18 or load_shin_parallel_error > 18 or load_knee_alignment_error > 0.18:
             coaching_items.append(
                 build_coaching_item(
-                    title="Square the feet to the same line",
+                    title="Keep knees tracking over the feet in the dip",
                     severity="high",
-                    metric="foot_parallel_error",
-                    value=foot_error,
-                    target="24 degrees or lower between left and right foot direction",
-                    why_it_matters="If the feet point in different directions, the hips and shoulders often rotate away from the shot line.",
-                    drill="Mark a straight line on the floor and start each rep with both feet parallel to that line.",
-                    phase="setup",
-                    start_frame=full_shot_start,
+                    metric="load_knee_alignment_error",
+                    value=round(max(load_shin_error, load_shin_parallel_error, load_knee_alignment_error * 100), 2),
+                    target="Knees stacked over feet through the dip load",
+                    why_it_matters="If the knees drift away from the feet during the load, the shot starts with sideways force before the release.",
+                    drill="Use slow front-view dip reps and pause at the bottom with each knee directly over the same-side foot.",
+                    phase="dip_load",
+                    start_frame=metrics["dip_load_start_frame"],
+                    end_frame=metrics["dip_load_end_frame"],
+                )
+            )
+        elif load_shin_error > 10 or load_shin_parallel_error > 10 or load_knee_alignment_error > 0.1:
+            coaching_items.append(
+                build_coaching_item(
+                    title="Clean up knee alignment during the load",
+                    severity="medium",
+                    metric="load_knee_alignment_error",
+                    value=round(max(load_shin_error, load_shin_parallel_error, load_knee_alignment_error * 100), 2),
+                    target="Knees stay close to vertical over the feet in the dip",
+                    why_it_matters="A cleaner knee track helps the lower body drive straight up instead of leaking energy sideways.",
+                    drill="Practice dip-and-freeze reps from the front and check that knees, ankles, and toes stay on the same line.",
+                    phase="dip_load",
+                    start_frame=metrics["dip_load_start_frame"],
+                    end_frame=metrics["dip_load_end_frame"],
+                )
+            )
+
+        foot_stagger_error = metrics.get("foot_stagger_error")
+        if foot_stagger_error is not None and foot_stagger_error > 0.08:
+            coaching_items.append(
+                build_coaching_item(
+                    title="Set both feet on the same line",
+                    severity="high",
+                    metric="foot_stagger_error",
+                    value=round(foot_stagger_error, 3),
+                    target="0.08 or lower normalized front/back foot stagger",
+                    why_it_matters="When one foot starts noticeably ahead of the other, the hips can rotate and pull the shot line off target.",
+                    drill="Use line-touch dip reps: set both toes on the same line, then dip without letting one foot slide forward or back.",
+                    phase="dip_load",
+                    start_frame=metrics.get("foot_stagger_frame") or metrics["dip_load_start_frame"],
+                    end_frame=metrics.get("foot_stagger_frame") or metrics["dip_load_end_frame"],
+                )
+            )
+        elif foot_stagger_error is not None and foot_stagger_error > 0.045:
+            coaching_items.append(
+                build_coaching_item(
+                    title="Reduce the foot stagger",
+                    severity="medium",
+                    metric="foot_stagger_error",
+                    value=round(foot_stagger_error, 3),
+                    target="0.045 or lower normalized front/back foot stagger",
+                    why_it_matters="A more even base makes it easier to load straight and finish balanced.",
+                    drill="Use line-touch form shots and check that both feet stay on the same line during the dip.",
+                    phase="dip_load",
+                    start_frame=metrics.get("foot_stagger_frame") or metrics["dip_load_start_frame"],
+                    end_frame=metrics.get("foot_stagger_frame") or metrics["dip_load_end_frame"],
+                )
+            )
+
+        foot_parallel_error = metrics.get("load_foot_parallel_error")
+        foot_floor_error = max(
+            metrics.get("load_left_foot_floor_error") or 0,
+            metrics.get("load_right_foot_floor_error") or 0,
+        )
+        foot_direction_error = None if foot_parallel_error is None else max(foot_parallel_error, foot_floor_error)
+        if foot_direction_error is not None and foot_direction_error > 24:
+            coaching_items.append(
+                build_coaching_item(
+                    title="Point both feet toward the shot line",
+                    severity="high",
+                    metric="load_foot_direction_error",
+                    value=round(foot_direction_error, 2),
+                    target="24 degrees or lower from the shot-line direction",
+                    why_it_matters="If the feet point away from the shot line, the hips and shoulders often rotate away from target.",
+                    drill="Use a court line as a target line and keep both toes pointing along it during the dip load.",
+                    phase="dip_load",
+                    start_frame=metrics["dip_load_start_frame"],
                     end_frame=metrics["dip_load_start_frame"],
                 )
             )
-        elif foot_error is not None and foot_error > 12:
+        elif foot_direction_error is not None and foot_direction_error > 12:
             coaching_items.append(
                 build_coaching_item(
-                    title="Make the feet more parallel",
+                    title="Clean up foot direction",
                     severity="medium",
-                    metric="foot_parallel_error",
-                    value=foot_error,
-                    target="12 degrees or lower between left and right foot direction",
-                    why_it_matters="Parallel feet make it easier to load and release on the same line.",
-                    drill="Take form shots with both toes set on the same floor line before every rep.",
-                    phase="setup",
-                    start_frame=full_shot_start,
+                    metric="load_foot_direction_error",
+                    value=round(foot_direction_error, 2),
+                    target="12 degrees or lower from the shot-line direction",
+                    why_it_matters="Feet that point along the same target line make it easier to load and release without rotation.",
+                    drill="Take form shots with both toes pointing along the same court line as you dip.",
+                    phase="dip_load",
+                    start_frame=metrics["dip_load_start_frame"],
                     end_frame=metrics["dip_load_start_frame"],
                 )
             )
@@ -1135,34 +1331,40 @@ def build_coaching_items(metrics: dict, phases: dict, camera_view: str = "side")
             )
         )
 
-    if metrics["elbow_angle_std"] > 45:
+    shooting_motion_elbow_angle_std = metrics.get("shooting_motion_elbow_angle_std", metrics["elbow_angle_std"])
+    shooting_motion_start = metrics.get("shooting_motion_start_frame") or full_shot_start
+    shooting_motion_end = metrics.get("shooting_motion_end_frame") or full_shot_end
+    shooting_motion_evidence_frame = metrics.get("shooting_motion_elbow_variation_frame") or shooting_motion_start
+    if shooting_motion_elbow_angle_std > 45:
         coaching_items.append(
             build_coaching_item(
-                title="Make the arm path more repeatable",
+                title="Smooth the shooting-arm path",
                 severity="medium",
-                metric="elbow_angle_std",
-                value=metrics["elbow_angle_std"],
+                metric="shooting_motion_elbow_angle_std",
+                value=shooting_motion_elbow_angle_std,
                 target="45 degrees or lower",
-                why_it_matters="Large variation in the shooting arm makes the release timing harder to repeat.",
-                drill="Shoot slow form reps from close range and keep the ball path centered every time.",
-                phase="full_shot",
-                start_frame=full_shot_start,
-                end_frame=full_shot_end,
+                why_it_matters="Large variation during the load-to-release motion can make the release timing harder to repeat.",
+                drill="Shoot slow form reps from close range and keep the ball path smooth from the dip into the release.",
+                phase="shooting_motion",
+                start_frame=shooting_motion_start,
+                end_frame=shooting_motion_end,
+                evidence_frame=shooting_motion_evidence_frame,
             )
         )
-    elif metrics["elbow_angle_std"] > 25:
+    elif shooting_motion_elbow_angle_std > 25:
         coaching_items.append(
             build_coaching_item(
-                title="Tighten arm motion consistency",
+                title="Tighten the shooting-arm motion",
                 severity="medium",
-                metric="elbow_angle_std",
-                value=metrics["elbow_angle_std"],
+                metric="shooting_motion_elbow_angle_std",
+                value=shooting_motion_elbow_angle_std,
                 target="25 degrees or lower",
-                why_it_matters="Less variation in the shooting arm helps the release happen the same way each time.",
-                drill="Shoot slow form reps and check that the ball path and elbow finish match on every shot.",
-                phase="full_shot",
-                start_frame=full_shot_start,
-                end_frame=full_shot_end,
+                why_it_matters="A smoother arm path through the shot helps the release happen at the same rhythm every time.",
+                drill="Shoot slow form reps and check that the ball path stays smooth from dip to release.",
+                phase="shooting_motion",
+                start_frame=shooting_motion_start,
+                end_frame=shooting_motion_end,
+                evidence_frame=shooting_motion_evidence_frame,
             )
         )
 
@@ -1542,8 +1744,29 @@ def analyze_shot(
     follow_through = measure_follow_through(df, shooting_side, release_frame, release_wrist_y)
     leg_drive = measure_leg_drive(df, release_frame, shooting_side)
     jump = measure_jump(df, release_frame)
+    shooting_motion_start_frame = leg_drive["dip_load_start_frame"] or release_frame
+    shooting_motion_end_frame = follow_through["follow_through_end_frame"] or min(
+        int(df["frame"].max()),
+        release_frame + 12,
+    )
+    shooting_arm_motion = measure_shooting_arm_motion(
+        df,
+        elbow_column,
+        shooting_motion_start_frame,
+        shooting_motion_end_frame,
+    )
     phases = detect_phases(df, release_frame, leg_drive, follow_through)
     alignment = measure_alignment(df, shooting_side, release_frame) if camera_view in {"front", "back"} else {}
+    load_alignment_frame = leg_drive["dip_load_start_frame"] or release_frame
+    load_alignment_end_frame = leg_drive["dip_load_end_frame"] or load_alignment_frame
+    load_alignment = (
+        {
+            **prefix_metrics(measure_alignment(df, shooting_side, load_alignment_frame), "load"),
+            **measure_foot_stagger(df, load_alignment_frame, load_alignment_end_frame),
+        }
+        if camera_view in {"front", "back"}
+        else {}
+    )
     release_confidence, release_confidence_label = calculate_release_confidence(
         df,
         shooting_side,
@@ -1554,12 +1777,15 @@ def analyze_shot(
 
     elbow_score, elbow_feedback = score_elbow_extension(max_elbow_angle)
     knee_score, knee_feedback = score_knee_bend(min_knee_angle)
-    consistency_score, consistency_feedback = score_consistency(elbow_angle_std)
+    consistency_score, consistency_feedback = score_consistency(
+        shooting_arm_motion["shooting_motion_elbow_angle_std"]
+    )
     release_score, release_feedback = score_release_extension(release_elbow_angle)
     follow_through_score, follow_through_feedback = score_follow_through(follow_through["follow_through_frames"])
     leg_drive_score, leg_drive_feedback = score_leg_drive(leg_drive["hip_rise"])
     jump_score, jump_feedback = score_jump(jump["ankle_lift"])
     alignment_score, alignment_feedback = score_alignment(alignment) if alignment else (0, [])
+    load_base_score = score_load_base_alignment(load_alignment) if camera_view in {"front", "back"} else {}
 
     if camera_view == "side":
         score = (
@@ -1582,11 +1808,12 @@ def analyze_shot(
         ]
     else:
         score = (
-            (alignment_score / 75) * 60
-            + release_score
+            (alignment_score / 75) * 45
+            + load_base_score.get("score", 15)
+            + min(15, release_score)
             + follow_through_score
-            + min(10, consistency_score)
-            + min(10, elbow_score)
+            + min(8, consistency_score)
+            + min(7, elbow_score)
         )
         feedback = [
             f"{camera_view.title()} view selected: grading emphasizes alignment metrics visible from this camera angle.",
@@ -1595,6 +1822,21 @@ def analyze_shot(
             follow_through_feedback,
             consistency_feedback,
         ]
+        load_shin_error = max(
+            load_alignment.get("load_left_shin_vertical_error") or 0,
+            load_alignment.get("load_right_shin_vertical_error") or 0,
+        )
+        load_knee_alignment_error = load_alignment.get("load_knee_to_ankle_alignment_error") or 0
+        if load_shin_error > 18 or load_knee_alignment_error > 0.18:
+            feedback.append("During the dip load, the knees drift away from the feet instead of loading straight toward the basket.")
+        elif load_shin_error > 10 or load_knee_alignment_error > 0.1:
+            feedback.append("Knee alignment in the dip load could be cleaner; keep each knee tracking over the same-side foot.")
+
+        foot_stagger_error = load_alignment.get("foot_stagger_error")
+        if foot_stagger_error is not None and foot_stagger_error > 0.08:
+            feedback.append("Feet are staggered during the dip load, with one foot noticeably ahead of the other.")
+        elif foot_stagger_error is not None and foot_stagger_error > 0.045:
+            feedback.append("Feet are slightly staggered during the dip load; keep both feet on the same line as you load.")
     score = max(0, min(100, round(score)))
     body_box = measure_body_box(df)
 
@@ -1602,6 +1844,7 @@ def analyze_shot(
         "max_elbow_angle": max_elbow_angle,
         "min_knee_angle": min_knee_angle,
         "elbow_angle_std": elbow_angle_std,
+        **shooting_arm_motion,
         "max_detected_people_count": int(df["detected_people_count"].max()) if "detected_people_count" in df.columns else 1,
         "avg_detected_people_count": round(float(df["detected_people_count"].mean()), 2) if "detected_people_count" in df.columns else 1.0,
         "multi_person_frame_ratio": round(float((df["detected_people_count"] >= 2).mean()), 2) if "detected_people_count" in df.columns else 0.0,
@@ -1637,6 +1880,8 @@ def analyze_shot(
         **leg_drive,
         **jump,
         **alignment,
+        **load_alignment,
+        **{f"load_base_{key}": value for key, value in load_base_score.items()},
     }
     reliability = calculate_analysis_reliability(df, camera_view, metrics)
     quality_warnings = build_quality_warnings(reliability, metrics)

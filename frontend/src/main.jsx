@@ -172,6 +172,10 @@ function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisElapsedSeconds, setAnalysisElapsedSeconds] = useState(0);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isLoadingSample, setIsLoadingSample] = useState(false);
+  const [openingRunId, setOpeningRunId] = useState(null);
+  const [deletingRunId, setDeletingRunId] = useState(null);
+  const [isDeletingAllHistory, setIsDeletingAllHistory] = useState(false);
   const [isComparing, setIsComparing] = useState(false);
   const [isComparingBest, setIsComparingBest] = useState(false);
   const [session, setSession] = useState(null);
@@ -185,6 +189,8 @@ function App() {
     return window.localStorage.getItem(ACCESS_MODE_STORAGE_KEY) === "guest";
   });
   const [selectedEvidenceItem, setSelectedEvidenceItem] = useState(null);
+  const [deletePrompt, setDeletePrompt] = useState(null);
+  const [actionToast, setActionToast] = useState(null);
   const annotatedVideoRef = useRef(null);
   const annotatedVideoSectionRef = useRef(null);
   const resultsSectionRef = useRef(null);
@@ -210,6 +216,15 @@ function App() {
         note: "Beta: ball tracking is informational and does not affect the score yet.",
       }
     : null;
+
+  function showActionToast(title, detail = "", tone = "info") {
+    setActionToast({
+      id: Date.now(),
+      title,
+      detail,
+      tone,
+    });
+  }
 
   const coreMetrics = useMemo(() => {
     if (!result) {
@@ -247,6 +262,16 @@ function App() {
         ["Right Shin Vertical Error", result.metrics.right_shin_vertical_error],
         ["Shin Parallel Error", result.metrics.shin_parallel_error],
         ["Foot Parallel Error", result.metrics.foot_parallel_error],
+        ["Left Foot Square Error", result.metrics.left_foot_floor_error],
+        ["Right Foot Square Error", result.metrics.right_foot_floor_error],
+        ["Load Foot Parallel Error", result.metrics.load_foot_parallel_error],
+        ["Load Left Foot Square Error", result.metrics.load_left_foot_floor_error],
+        ["Load Right Foot Square Error", result.metrics.load_right_foot_floor_error],
+        ["Load Knee Alignment", result.metrics.load_knee_to_ankle_alignment_error],
+        ["Load Shin Parallel Error", result.metrics.load_shin_parallel_error],
+        ["Foot Stagger Error", result.metrics.foot_stagger_error],
+        ["Load Base Score", result.metrics.load_base_score],
+        ["Load Base Penalty", result.metrics.load_base_penalty],
         ["Forearm Vertical Error", result.metrics.forearm_vertical_error],
         ["Follow-Through Line Error", result.metrics.follow_through_vertical_error],
         ["Body Lean", result.metrics.body_lean],
@@ -270,12 +295,19 @@ function App() {
     const videoSection = annotatedVideoSectionRef.current;
 
     if (!video || !fps || !item.start_frame) {
+      showActionToast("Annotated video unavailable", "Generate an annotated video to watch this moment.", "danger");
       return;
     }
 
+    showActionToast("Jumping to moment", `${titleCase(item.phase)} - ${formatFrameRange(item)}`);
     video.currentTime = Math.max(0, (item.start_frame - 1) / fps);
     videoSection?.scrollIntoView({ behavior: "smooth", block: "start" });
     video.play().catch(() => {});
+  }
+
+  function openEvidenceFrame(item) {
+    setSelectedEvidenceItem(item);
+    showActionToast("Evidence frame opened", item.title);
   }
 
   function getEvidenceFrameUrl(item) {
@@ -301,6 +333,7 @@ function App() {
     }
 
     setIsLoadingHistory(true);
+    showActionToast("Refreshing library", "Checking your saved shot reports.");
     try {
       const response = await fetch(`${API_BASE_URL}/analyses?limit=10`, {
         headers: authHeaders,
@@ -311,8 +344,10 @@ function App() {
       }
 
       setAnalysisHistory(data);
+      showActionToast("Library updated", `${data.length} saved ${data.length === 1 ? "shot" : "shots"} ready.`, "success");
     } catch (historyError) {
       setError(getRequestErrorMessage(historyError));
+      showActionToast("Refresh failed", "Could not load saved analyses.", "danger");
     } finally {
       setIsLoadingHistory(false);
     }
@@ -320,6 +355,8 @@ function App() {
 
   async function openSavedAnalysis(runId) {
     setError("");
+    setOpeningRunId(runId);
+    showActionToast("Opening report", "Loading the saved analysis.");
     try {
       const response = await fetch(`${API_BASE_URL}/analyses/${runId}`, {
         headers: authHeaders,
@@ -331,11 +368,15 @@ function App() {
 
       setResult(data);
       setSelectedEvidenceItem(null);
+      showActionToast("Report opened", "Jumping to the analysis details.", "success");
       window.setTimeout(() => {
         resultsSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 50);
     } catch (savedAnalysisError) {
       setError(getRequestErrorMessage(savedAnalysisError));
+      showActionToast("Open failed", "Could not load that saved report.", "danger");
+    } finally {
+      setOpeningRunId(null);
     }
   }
 
@@ -357,6 +398,7 @@ function App() {
 
     setIsComparing(true);
     setError("");
+    showActionToast("Comparing shots", "Building the side-by-side report.");
     try {
       const params = new URLSearchParams({
         run_a: selectedComparisonRuns[0],
@@ -371,8 +413,10 @@ function App() {
       }
 
       setComparison(data);
+      showActionToast("Comparison ready", "The comparison panel is updated.", "success");
     } catch (compareError) {
       setError(getRequestErrorMessage(compareError));
+      showActionToast("Compare failed", "Could not compare those shots.", "danger");
     } finally {
       setIsComparing(false);
     }
@@ -386,6 +430,7 @@ function App() {
 
     setIsComparingBest(true);
     setError("");
+    showActionToast("Finding your best shot", "Comparing against your saved baseline.");
     try {
       const response = await fetch(`${API_BASE_URL}/analyses/${result.run_id}/compare-best`, {
         headers: authHeaders,
@@ -396,20 +441,20 @@ function App() {
       }
 
       setComparison(data);
+      showActionToast("Best-shot comparison ready", "Baseline comparison is updated.", "success");
     } catch (bestComparisonError) {
       setError(getRequestErrorMessage(bestComparisonError));
+      showActionToast("Compare failed", "Could not compare to your best shot.", "danger");
     } finally {
       setIsComparingBest(false);
     }
   }
 
-  async function deleteSavedAnalysis(analysis) {
-    const shouldDelete = window.confirm(`Delete analysis "${analysis.run_id}"? This cannot be undone.`);
-    if (!shouldDelete) {
-      return;
-    }
-
+  async function performDeleteSavedAnalysis(analysis) {
     setError("");
+    setDeletingRunId(analysis.run_id);
+    setDeletePrompt(null);
+    showActionToast("Deleting analysis", "Removing the selected report.");
     try {
       const response = await fetch(`${API_BASE_URL}/analyses/${analysis.run_id}`, {
         method: "DELETE",
@@ -428,10 +473,85 @@ function App() {
       if (comparison?.first?.run_id === analysis.run_id || comparison?.second?.run_id === analysis.run_id) {
         setComparison(null);
       }
+      showActionToast("Analysis deleted", "The report was removed from your library.", "success");
       loadAnalysisHistory();
     } catch (deleteError) {
       setError(getRequestErrorMessage(deleteError));
+      showActionToast("Delete failed", "Could not delete that report.", "danger");
+    } finally {
+      setDeletingRunId(null);
     }
+  }
+
+  function requestDeleteSavedAnalysis(analysis) {
+    showActionToast("Confirm delete", "Review the confirmation card.");
+    setDeletePrompt({
+      type: "single",
+      analysis,
+      title: "Delete this analysis?",
+      detail: `This will permanently remove ${analysis.video || analysis.run_id} from your recent analyses.`,
+      confirmLabel: "Delete analysis",
+    });
+  }
+
+  async function performDeleteAllSavedAnalyses() {
+    if (analysisHistory.length === 0) {
+      return;
+    }
+
+    setError("");
+    setIsDeletingAllHistory(true);
+    setDeletePrompt(null);
+    showActionToast("Deleting library", "Clearing saved analyses from this account.");
+    try {
+      const response = await fetch(`${API_BASE_URL}/analyses`, {
+        method: "DELETE",
+        headers: authHeaders,
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Could not delete saved analyses.");
+      }
+
+      setAnalysisHistory([]);
+      setSelectedComparisonRuns([]);
+      setComparison(null);
+      setResult(null);
+      setSelectedEvidenceItem(null);
+      showActionToast("Library cleared", "All recent analyses were deleted.", "success");
+    } catch (deleteError) {
+      setError(getRequestErrorMessage(deleteError));
+      showActionToast("Delete failed", "Could not clear the library.", "danger");
+    } finally {
+      setIsDeletingAllHistory(false);
+    }
+  }
+
+  function requestDeleteAllSavedAnalyses() {
+    if (analysisHistory.length === 0) {
+      return;
+    }
+
+    showActionToast("Confirm delete all", "Review the confirmation card.");
+    setDeletePrompt({
+      type: "all",
+      title: "Delete all analyses?",
+      detail: `This will permanently remove ${analysisHistory.length} saved ${analysisHistory.length === 1 ? "analysis" : "analyses"} from this library.`,
+      confirmLabel: "Delete all",
+    });
+  }
+
+  function confirmDeletePrompt() {
+    if (!deletePrompt || isDeletingAllHistory || deletingRunId) {
+      return;
+    }
+
+    if (deletePrompt.type === "single") {
+      performDeleteSavedAnalysis(deletePrompt.analysis);
+      return;
+    }
+
+    performDeleteAllSavedAnalyses();
   }
 
   useEffect(() => {
@@ -474,6 +594,18 @@ function App() {
   }, [isAuthReady, hasEnteredApp, session?.access_token]);
 
   useEffect(() => {
+    if (!actionToast) {
+      return undefined;
+    }
+
+    const timerId = window.setTimeout(() => {
+      setActionToast(null);
+    }, 2600);
+
+    return () => window.clearTimeout(timerId);
+  }, [actionToast]);
+
+  useEffect(() => {
     if (!isAnalyzing) {
       return undefined;
     }
@@ -488,11 +620,13 @@ function App() {
   async function signInWithGoogle() {
     if (!supabase) {
       setError("Supabase is not configured yet.");
+      showActionToast("Sign in unavailable", "Supabase is not configured yet.", "danger");
       return;
     }
 
     setIsSigningIn(true);
     setError("");
+    showActionToast("Opening Google", "Redirecting to secure sign-in.");
     const { error: signInError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
@@ -502,6 +636,7 @@ function App() {
 
     if (signInError) {
       setError(signInError.message);
+      showActionToast("Sign in failed", signInError.message, "danger");
       setIsSigningIn(false);
     }
   }
@@ -513,6 +648,7 @@ function App() {
 
     setError("");
     await supabase.auth.signOut();
+    showActionToast("Signed out", "Your local workspace is back to the welcome screen.", "success");
     setHasEnteredApp(false);
     setIsGuestMode(false);
     window.localStorage.removeItem(ACCESS_MODE_STORAGE_KEY);
@@ -523,6 +659,7 @@ function App() {
     setHasEnteredApp(true);
     setIsGuestMode(true);
     window.localStorage.setItem(ACCESS_MODE_STORAGE_KEY, "guest");
+    showActionToast("Guest mode started", "You can analyze a shot without signing in.", "success");
   }
 
   function startNewAnalysis() {
@@ -531,12 +668,14 @@ function App() {
     setSelectedEvidenceItem(null);
     setError("");
     setWorkspaceView("capture");
+    showActionToast("New analysis", "Upload area is ready.");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function openHistoryView() {
     setError("");
     setWorkspaceView("history");
+    showActionToast("Shot library", "Opening your recent analyses.");
     loadAnalysisHistory();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -544,6 +683,7 @@ function App() {
   function openCaptureView() {
     setError("");
     setWorkspaceView("capture");
+    showActionToast("Capture page", "Ready for another video.");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -551,11 +691,13 @@ function App() {
     event.preventDefault();
     if (!hasEnteredApp) {
       setError("Choose sign in or continue as guest before analyzing.");
+      showActionToast("Choose access mode", "Sign in or continue as guest first.", "danger");
       return;
     }
 
     if (!file) {
       setError("Choose a video before analyzing.");
+      showActionToast("Choose a video", "Pick an mp4 or mov before analyzing.", "danger");
       return;
     }
 
@@ -566,6 +708,7 @@ function App() {
     setError("");
     setResult(null);
     setSelectedEvidenceItem(null);
+    showActionToast("Analysis started", "Locking upload and reading the shot.");
 
     const formData = new FormData();
     formData.append("file", file);
@@ -614,6 +757,7 @@ function App() {
 
       setResult(data);
       setSelectedEvidenceItem(null);
+      showActionToast("Analysis complete", `Shot score ${data.score}. Report is ready.`, "success");
       setAnalysisHistory((currentHistory) => {
         const optimisticSummary = {
           run_id: data.run_id,
@@ -632,6 +776,7 @@ function App() {
       }
     } catch (requestError) {
       setError(getRequestErrorMessage(requestError));
+      showActionToast("Analysis failed", getRequestErrorMessage(requestError), "danger");
     } finally {
       setIsAnalyzing(false);
     }
@@ -640,6 +785,8 @@ function App() {
   async function loadSampleResult() {
     setError("");
     setComparison(null);
+    setIsLoadingSample(true);
+    showActionToast("Loading demo", selectedSample.label);
     try {
       const response = await fetch(selectedSample.path);
       const data = await response.json();
@@ -649,11 +796,15 @@ function App() {
 
       setResult(data);
       setSelectedEvidenceItem(null);
+      showActionToast("Demo loaded", "Sample report is ready.", "success");
       window.setTimeout(() => {
         resultsSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 50);
     } catch (sampleError) {
       setError(sampleError.message);
+      showActionToast("Demo failed", sampleError.message, "danger");
+    } finally {
+      setIsLoadingSample(false);
     }
   }
 
@@ -661,6 +812,15 @@ function App() {
 
   return (
     <main className="app-shell">
+      {actionToast && (
+        <div className={`action-toast ${actionToast.tone}`} role="status" aria-live="polite">
+          <span aria-hidden="true" />
+          <div>
+            <strong>{actionToast.title}</strong>
+            {actionToast.detail && <p>{actionToast.detail}</p>}
+          </div>
+        </div>
+      )}
       <section className="workspace">
         {isAuthReady && !hasEnteredApp && !session ? (
           <section className="welcome-panel">
@@ -684,7 +844,8 @@ function App() {
                 <span>Sign in to keep your shot history, or try the app as a guest.</span>
               </div>
               <button type="button" onClick={signInWithGoogle} disabled={!isSupabaseConfigured || isSigningIn}>
-                {isSigningIn ? "Opening Google..." : "Sign in with Google"}
+                {isSigningIn && <span className="button-spinner small" aria-hidden="true" />}
+                <span>{isSigningIn ? "Opening Google..." : "Sign in with Google"}</span>
               </button>
               <button className="sample-button" type="button" onClick={continueAsGuest}>
                 Continue as guest
@@ -730,12 +891,14 @@ function App() {
                       <span>Not saved to your account</span>
                     </div>
                     <button className="secondary-button" type="button" onClick={signInWithGoogle} disabled={isSigningIn}>
-                      {isSigningIn ? "Opening Google..." : "Sign in"}
+                      {isSigningIn && <span className="button-spinner small" aria-hidden="true" />}
+                      <span>{isSigningIn ? "Opening Google..." : "Sign in"}</span>
                     </button>
                   </>
                 ) : (
                   <button className="secondary-button" type="button" onClick={signInWithGoogle} disabled={isSigningIn}>
-                    {isSigningIn ? "Opening Google..." : "Sign in with Google"}
+                    {isSigningIn && <span className="button-spinner small" aria-hidden="true" />}
+                    <span>{isSigningIn ? "Opening Google..." : "Sign in with Google"}</span>
                   </button>
                 )
               ) : (
@@ -769,8 +932,9 @@ function App() {
                 </select>
               </label>
               <p>{selectedSample.description}</p>
-              <button className="sample-button" type="button" onClick={loadSampleResult}>
-                Load Demo
+              <button className="sample-button" type="button" onClick={loadSampleResult} disabled={isLoadingSample}>
+                {isLoadingSample && <span className="button-spinner small" aria-hidden="true" />}
+                <span>{isLoadingSample ? "Loading demo..." : "Load Demo"}</span>
               </button>
             </div>
           </div>
@@ -894,24 +1058,50 @@ function App() {
 
         {appView === "history" && (
         <section className="history-panel history-screen stage-card">
-          <div className="section-header">
+          <div className="history-hero">
             <div>
               <p className="eyebrow dark">Shot library</p>
               <h2>Recent Analyses</h2>
-              <p className="subtle">Open saved reports or compare two shots from the same account.</p>
+              <p className="subtle">Open saved reports, compare progress, or clear old test runs from this account.</p>
+            </div>
+            <div className="history-summary">
+              <span>Saved shots</span>
+              <strong>{analysisHistory.length}</strong>
+            </div>
+          </div>
+
+          <div className="history-toolbar">
+            <div>
+              <span>{selectedComparisonRuns.length}/2 selected for comparison</span>
+              <strong>{isGuestMode ? "Guest library" : "Personal library"}</strong>
             </div>
             <div className="header-actions">
               <button
                 className="secondary-button"
                 type="button"
                 onClick={compareSelectedRuns}
-                disabled={isComparing || selectedComparisonRuns.length !== 2}
+                disabled={isComparing || selectedComparisonRuns.length !== 2 || isDeletingAllHistory}
               >
-                {isComparing ? "Comparing..." : "Compare"}
+                {isComparing && <span className="button-spinner small" aria-hidden="true" />}
+                <span>{isComparing ? "Comparing..." : "Compare"}</span>
               </button>
-              <button className="secondary-button" type="button" onClick={loadAnalysisHistory} disabled={isLoadingHistory}>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={loadAnalysisHistory}
+                disabled={isLoadingHistory || isDeletingAllHistory}
+              >
                 {isLoadingHistory && <span className="button-spinner small" aria-hidden="true" />}
                 <span>{isLoadingHistory ? "Loading..." : "Refresh"}</span>
+              </button>
+              <button
+                className="danger-button ghost-danger"
+                type="button"
+                onClick={requestDeleteAllSavedAnalyses}
+                disabled={analysisHistory.length === 0 || isDeletingAllHistory || isLoadingHistory}
+              >
+                {isDeletingAllHistory && <span className="button-spinner small" aria-hidden="true" />}
+                <span>{isDeletingAllHistory ? "Deleting all..." : "Delete all"}</span>
               </button>
             </div>
           </div>
@@ -940,34 +1130,52 @@ function App() {
                   Refreshing saved shots...
                 </div>
               )}
-              {analysisHistory.map((analysis) => (
-                <article className="history-item" key={analysis.run_id}>
+              {analysisHistory.map((analysis) => {
+                const isOpening = openingRunId === analysis.run_id;
+                const isDeleting = deletingRunId === analysis.run_id;
+                const isBusy = isOpening || isDeleting || isDeletingAllHistory;
+                return (
+                <article className={`history-item ${isBusy ? "is-busy" : ""}`} key={analysis.run_id}>
                   <label className="compare-check">
                     <input
                       type="checkbox"
                       checked={selectedComparisonRuns.includes(analysis.run_id)}
+                      disabled={isBusy}
                       onChange={() => toggleComparisonRun(analysis.run_id)}
                     />
                     <span>Compare</span>
                   </label>
-                  <div>
+                  <div className="history-main">
                     <strong>{analysis.video}</strong>
                     <span>{formatRunDate(analysis.created_at)}</span>
                   </div>
                   <div className="history-meta">
                     <span>Score {analysis.score}</span>
-                    <span>{analysis.shooting_side}</span>
+                    <span>{titleCase(analysis.camera_view || "side")} · {analysis.shooting_side}</span>
                   </div>
                   <div className="history-actions">
-                    <button className="secondary-button" type="button" onClick={() => openSavedAnalysis(analysis.run_id)}>
-                      Open
+                    <button
+                      className="secondary-button history-action-button"
+                      type="button"
+                      onClick={() => openSavedAnalysis(analysis.run_id)}
+                      disabled={isBusy}
+                    >
+                      {isOpening && <span className="button-spinner small" aria-hidden="true" />}
+                      <span>{isOpening ? "Opening..." : "Open"}</span>
                     </button>
-                    <button className="danger-button" type="button" onClick={() => deleteSavedAnalysis(analysis)}>
-                      Delete
+                    <button
+                      className="danger-button history-action-button"
+                      type="button"
+                      onClick={() => requestDeleteSavedAnalysis(analysis)}
+                      disabled={isBusy}
+                    >
+                      {isDeleting && <span className="button-spinner small" aria-hidden="true" />}
+                      <span>{isDeleting ? "Deleting..." : "Delete"}</span>
                     </button>
                   </div>
                 </article>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <p className="empty-state">
@@ -1054,7 +1262,8 @@ function App() {
                   onClick={compareToBestShot}
                   disabled={isComparingBest}
                 >
-                  {isComparingBest ? "Comparing..." : "Compare to Best"}
+                  {isComparingBest && <span className="button-spinner small" aria-hidden="true" />}
+                  <span>{isComparingBest ? "Comparing..." : "Compare to Best"}</span>
                 </button>
               </div>
             </section>
@@ -1246,7 +1455,7 @@ function App() {
                         className="evidence-button"
                         type="button"
                         disabled={!getEvidenceFrameUrl(item)}
-                        onClick={() => setSelectedEvidenceItem(item)}
+                        onClick={() => openEvidenceFrame(item)}
                       >
                         View frame
                       </button>
@@ -1313,6 +1522,47 @@ function App() {
             )}
           </div>
         )}
+          </div>
+        )}
+        {deletePrompt && (
+          <div className="modal-backdrop" role="presentation" onClick={() => setDeletePrompt(null)}>
+            <section
+              className="delete-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="delete-modal-title"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="delete-modal-mark" aria-hidden="true">!</div>
+              <div>
+                <p className="eyebrow">Confirm delete</p>
+                <h2 id="delete-modal-title">{deletePrompt.title}</h2>
+                <p>{deletePrompt.detail}</p>
+              </div>
+              <div className="delete-modal-actions">
+                <button
+                  className="secondary-button cancel-button"
+                  type="button"
+                  onClick={() => setDeletePrompt(null)}
+                  disabled={isDeletingAllHistory || Boolean(deletingRunId)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="danger-button"
+                  type="button"
+                  onClick={confirmDeletePrompt}
+                  disabled={isDeletingAllHistory || Boolean(deletingRunId)}
+                >
+                  {(isDeletingAllHistory || Boolean(deletingRunId)) && (
+                    <span className="button-spinner small" aria-hidden="true" />
+                  )}
+                  <span>
+                    {isDeletingAllHistory || Boolean(deletingRunId) ? "Deleting..." : deletePrompt.confirmLabel}
+                  </span>
+                </button>
+              </div>
+            </section>
           </div>
         )}
         {selectedEvidenceItem && selectedEvidenceFrameUrl && (

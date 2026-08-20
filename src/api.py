@@ -554,6 +554,27 @@ def get_analysis(run_id: str, authorization: str | None = Header(default=None)) 
     return build_saved_analysis_response(report)
 
 
+@app.delete("/analyses")
+def delete_all_analyses(authorization: str | None = Header(default=None)) -> dict:
+    user_id = get_request_user_id(authorization)
+    if supabase_store.is_configured():
+        deleted_count = supabase_store.delete_reports_for_user(user_id)
+        return {"deleted": True, "deleted_count": deleted_count}
+
+    reports = load_reports_for_user(user_id, 100)
+    deleted_count = 0
+    for report in reports:
+        run_id = report.get("run_id")
+        if not run_id:
+            continue
+
+        run_dir = get_run_dir(run_id)
+        shutil.rmtree(run_dir)
+        deleted_count += 1
+
+    return {"deleted": True, "deleted_count": deleted_count}
+
+
 @app.delete("/analyses/{run_id}")
 def delete_analysis(run_id: str, authorization: str | None = Header(default=None)) -> dict:
     user_id = get_request_user_id(authorization)

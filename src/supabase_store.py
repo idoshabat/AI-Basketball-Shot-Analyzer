@@ -324,3 +324,15 @@ def delete_report(run_id: str, owner_user_id: str) -> bool:
     owner_filter = quote(owner_user_id, safe="")
     request_json("DELETE", f"/rest/v1/{table}?run_id=eq.{run_filter}&owner_user_id=eq.{owner_filter}")
     return True
+
+
+def delete_reports_for_user(owner_user_id: str, limit: int = 100) -> int:
+    reports = list_reports(owner_user_id, limit)
+    deleted_count = 0
+
+    for report in reports:
+        run_id = report.get("run_id")
+        if run_id and delete_report(run_id, owner_user_id):
+            deleted_count += 1
+
+    return deleted_count
