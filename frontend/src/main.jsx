@@ -24,6 +24,45 @@ const CAMERA_VIEW_GUIDANCE = {
 
 const ACCESS_MODE_STORAGE_KEY = "shotAnalyzerAccessMode";
 
+const SAMPLE_RESULTS = [
+  {
+    id: "side-ft2",
+    label: "Good Side View - FT2",
+    description: "Clean side-view form shot.",
+    path: "/samples/side-ft2/analysis.json",
+  },
+  {
+    id: "side-ft3",
+    label: "Good Side View - FT3",
+    description: "Clean side-view shot with strong score.",
+    path: "/samples/side-ft3/analysis.json",
+  },
+  {
+    id: "front-ft4",
+    label: "Good Front View - FT4",
+    description: "Front-view alignment analysis.",
+    path: "/samples/front-ft4/analysis.json",
+  },
+  {
+    id: "front-ft5",
+    label: "Good Front View - FT5",
+    description: "Clean single-player front-view shot.",
+    path: "/samples/front-ft5/analysis.json",
+  },
+  {
+    id: "back-ft6",
+    label: "Good Back View - FT6",
+    description: "Back-view shot with clean reliability.",
+    path: "/samples/back-ft6/analysis.json",
+  },
+  {
+    id: "bad-ft1",
+    label: "Bad Input - FT1",
+    description: "Far, crowded video that should trigger quality warnings.",
+    path: "/samples/bad-ft1/analysis.json",
+  },
+];
+
 function formatMetric(value, digits = 2) {
   if (value === null || value === undefined) {
     return "N/A";
@@ -122,6 +161,8 @@ function formatElapsedTime(totalSeconds) {
 function App() {
   const [file, setFile] = useState(null);
   const [cameraView, setCameraView] = useState("side");
+  const [shootingSide, setShootingSide] = useState("auto");
+  const [selectedSampleId, setSelectedSampleId] = useState(SAMPLE_RESULTS[0].id);
   const [includeAnnotatedVideo, setIncludeAnnotatedVideo] = useState(true);
   const [result, setResult] = useState(null);
   const [analysisHistory, setAnalysisHistory] = useState([]);
@@ -136,6 +177,7 @@ function App() {
   const [session, setSession] = useState(null);
   const [isAuthReady, setIsAuthReady] = useState(!isSupabaseConfigured);
   const [isSigningIn, setIsSigningIn] = useState(false);
+  const [workspaceView, setWorkspaceView] = useState("capture");
   const [hasEnteredApp, setHasEnteredApp] = useState(() => {
     return window.localStorage.getItem(ACCESS_MODE_STORAGE_KEY) === "guest";
   });
@@ -147,10 +189,27 @@ function App() {
   const annotatedVideoSectionRef = useRef(null);
   const resultsSectionRef = useRef(null);
 
+  const appView = isAnalyzing ? "analyzing" : result ? "report" : workspaceView;
   const chartUrl = resolveOutputUrl(result?.output_urls?.angles_chart);
   const followThroughDebugChartUrl = resolveOutputUrl(result?.output_urls?.follow_through_debug_chart);
   const annotatedVideoUrl = resolveOutputUrl(result?.output_urls?.annotated_video);
   const authHeaders = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+  const selectedSample = SAMPLE_RESULTS.find((sample) => sample.id === selectedSampleId) || SAMPLE_RESULTS[0];
+  const ballTracking = result?.ball_tracking?.status || result?.metrics?.ball_tracking_status
+    ? result?.ball_tracking?.status
+      ? result.ball_tracking
+      : {
+        status: result.metrics.ball_tracking_status,
+        detector_backend: result.metrics.ball_detector_backend,
+        visibility_ratio: result.metrics.ball_visibility_ratio,
+        close_visibility_ratio: result.metrics.ball_close_visibility_ratio,
+        ball_release_frame: result.metrics.ball_release_frame,
+        release_frame_delta: result.metrics.ball_release_frame_delta,
+        arc_height: result.metrics.ball_arc_height,
+        avg_wrist_distance: result.metrics.ball_avg_wrist_distance,
+        note: "Beta: ball tracking is informational and does not affect the score yet.",
+      }
+    : null;
 
   const coreMetrics = useMemo(() => {
     if (!result) {
@@ -166,10 +225,24 @@ function App() {
       ["Follow-Through Ratio", result.metrics.follow_through_ratio],
       ["Hip Rise", result.metrics.hip_rise],
       ["Ankle Lift", result.metrics.ankle_lift],
+      ["Scene People Max", result.metrics.scene_max_people_count],
+      ["Scene Multi-Person Frames", result.metrics.scene_multi_person_frame_ratio],
+      ["Pose People Max", result.metrics.max_detected_people_count],
+      ["Player Size", result.metrics.median_selected_pose_area],
+      ["Body Height", result.metrics.median_body_height],
+      ["Ball Close Visibility", result.metrics.ball_close_visibility_ratio],
+      ["Ball Release Frame", result.metrics.ball_release_frame],
+      ["Ball Release Alignment", result.metrics.ball_release_confidence_label],
     ];
 
-    if (result.camera_view !== "side") {
+    if (result.camera_view === "side") {
       metrics.push(
+        ["Ball Arc Quality", result.metrics.ball_side_arc_quality],
+        ["Ball Upward Frames", result.metrics.ball_post_release_upward_frames],
+      );
+    } else {
+      metrics.push(
+        ["Ball Line Drift", result.metrics.ball_front_back_line_drift],
         ["Left Shin Vertical Error", result.metrics.left_shin_vertical_error],
         ["Right Shin Vertical Error", result.metrics.right_shin_vertical_error],
         ["Shin Parallel Error", result.metrics.shin_parallel_error],
@@ -452,6 +525,28 @@ function App() {
     window.localStorage.setItem(ACCESS_MODE_STORAGE_KEY, "guest");
   }
 
+  function startNewAnalysis() {
+    setResult(null);
+    setComparison(null);
+    setSelectedEvidenceItem(null);
+    setError("");
+    setWorkspaceView("capture");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function openHistoryView() {
+    setError("");
+    setWorkspaceView("history");
+    loadAnalysisHistory();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function openCaptureView() {
+    setError("");
+    setWorkspaceView("capture");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   async function analyzeShot(event) {
     event.preventDefault();
     if (!hasEnteredApp) {
@@ -465,6 +560,7 @@ function App() {
     }
 
     const selectedCameraView = event.currentTarget.elements.camera_view?.value || cameraView;
+    const selectedShootingSide = event.currentTarget.elements.shooting_side?.value || shootingSide;
     setAnalysisElapsedSeconds(0);
     setIsAnalyzing(true);
     setError("");
@@ -474,12 +570,14 @@ function App() {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("camera_view", selectedCameraView);
+    formData.append("shooting_side", selectedShootingSide);
 
     const params = new URLSearchParams({
       save_chart: "true",
       save_annotated_video: includeAnnotatedVideo ? "true" : "false",
       save_report: "true",
       camera_view: selectedCameraView,
+      shooting_side: selectedShootingSide,
     });
 
     try {
@@ -488,6 +586,7 @@ function App() {
         headers: {
           ...authHeaders,
           "X-Camera-View": selectedCameraView,
+          "X-Shooting-Side": selectedShootingSide,
         },
         body: formData,
       });
@@ -507,6 +606,10 @@ function App() {
 
       if (selectedCameraView !== "side" && data.metrics?.alignment_status !== "measured") {
         throw new Error("Front/back alignment metrics were not generated. Restart the backend and analyze the video again.");
+      }
+
+      if (selectedShootingSide !== "auto" && data.shooting_side !== selectedShootingSide) {
+        throw new Error(`Shooting hand mismatch: selected ${selectedShootingSide}, backend analyzed ${data.shooting_side}.`);
       }
 
       setResult(data);
@@ -538,7 +641,7 @@ function App() {
     setError("");
     setComparison(null);
     try {
-      const response = await fetch("/samples/sample-analysis.json");
+      const response = await fetch(selectedSample.path);
       const data = await response.json();
       if (!response.ok) {
         throw new Error("Could not load sample analysis.");
@@ -546,6 +649,9 @@ function App() {
 
       setResult(data);
       setSelectedEvidenceItem(null);
+      window.setTimeout(() => {
+        resultsSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 50);
     } catch (sampleError) {
       setError(sampleError.message);
     }
@@ -590,18 +696,28 @@ function App() {
             </div>
           </section>
         ) : (
-          <>
-        <div className="upload-panel">
-          <div>
-            <p className="eyebrow">AI Basketball Shot Analyzer</p>
-            <h1>Upload a shot and get a motion report.</h1>
-            <div className="auth-panel">
+          <div className={`app-stage ${appView}`}>
+        {appView !== "analyzing" && (
+          <nav className="top-nav" aria-label="App navigation">
+            <button className="brand-button" type="button" onClick={startNewAnalysis}>
+              AI Basketball Shot Analyzer
+            </button>
+            <div className="nav-actions">
+              {appView === "history" ? (
+                <button className="secondary-button" type="button" onClick={openCaptureView}>
+                  New analysis
+                </button>
+              ) : (
+                <button className="secondary-button" type="button" onClick={openHistoryView}>
+                  Recent analyses
+                </button>
+              )}
               {isSupabaseConfigured ? (
                 session ? (
                   <>
-                    <div>
+                    <div className="account-chip">
                       <strong>{getUserName(session)}</strong>
-                      <span>Your analyses and comparisons are scoped to this account.</span>
+                      <span>Signed in</span>
                     </div>
                     <button className="secondary-button" type="button" onClick={signOut}>
                       Sign Out
@@ -609,35 +725,61 @@ function App() {
                   </>
                 ) : isGuestMode ? (
                   <>
-                    <div>
+                    <div className="account-chip">
                       <strong>Guest session</strong>
-                      <span>This analysis will not be attached to a personal account.</span>
+                      <span>Not saved to your account</span>
                     </div>
                     <button className="secondary-button" type="button" onClick={signInWithGoogle} disabled={isSigningIn}>
                       {isSigningIn ? "Opening Google..." : "Sign in"}
                     </button>
                   </>
                 ) : (
-                  <>
-                    <div>
-                      <strong>Personal shot history</strong>
-                      <span>Sign in to save analyses under your own account.</span>
-                    </div>
-                    <button className="secondary-button" type="button" onClick={signInWithGoogle} disabled={isSigningIn}>
-                      {isSigningIn ? "Opening Google..." : "Sign in with Google"}
-                    </button>
-                  </>
+                  <button className="secondary-button" type="button" onClick={signInWithGoogle} disabled={isSigningIn}>
+                    {isSigningIn ? "Opening Google..." : "Sign in with Google"}
+                  </button>
                 )
               ) : (
-                <div>
+                <div className="account-chip">
                   <strong>Guest mode</strong>
-                  <span>Add Supabase env vars to enable Google sign-in and per-user history.</span>
+                  <span>Supabase auth not configured</span>
                 </div>
               )}
+            </div>
+          </nav>
+        )}
+        {appView === "capture" && (
+        <div className="upload-panel stage-card">
+          <div className="capture-copy">
+            <p className="eyebrow">AI Basketball Shot Analyzer</p>
+            <h1>Upload a shot and get a motion report.</h1>
+            <div className="capture-hints" aria-label="Recording tips">
+              <span>One shooter</span>
+              <span>Full body visible</span>
+              <span>Steady camera</span>
+            </div>
+            <div className="sample-picker">
+              <label>
+                <span>Demo sample</span>
+                <select value={selectedSampleId} onChange={(event) => setSelectedSampleId(event.target.value)}>
+                  {SAMPLE_RESULTS.map((sample) => (
+                    <option value={sample.id} key={sample.id}>
+                      {sample.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p>{selectedSample.description}</p>
+              <button className="sample-button" type="button" onClick={loadSampleResult}>
+                Load Demo
+              </button>
             </div>
           </div>
 
           <form onSubmit={analyzeShot} className="upload-form">
+            <div className="form-section-title">
+              <strong>New analysis</strong>
+              <span>Choose the video and how it was filmed.</span>
+            </div>
             <label className="file-input">
               <span>{file ? file.name : "Choose video file"}</span>
               <input
@@ -662,6 +804,15 @@ function App() {
               <span>Compare shots only when they were filmed from the same camera angle.</span>
             </div>
 
+            <label className="toggle-row">
+              <span>Shooting hand</span>
+              <select name="shooting_side" value={shootingSide} onChange={(event) => setShootingSide(event.target.value)}>
+                <option value="auto">Auto detect</option>
+                <option value="right">Right</option>
+                <option value="left">Left</option>
+              </select>
+            </label>
+
             <div className="capture-guidance">
               <strong>For the best result</strong>
               <p>
@@ -683,9 +834,6 @@ function App() {
               {isAnalyzing && <span className="button-spinner" aria-hidden="true" />}
               <span>{isAnalyzing ? "Analyzing shot..." : "Analyze Shot"}</span>
             </button>
-            <button className="sample-button" type="button" onClick={loadSampleResult}>
-              Load Sample Result
-            </button>
             <p className="processing-note">
               Analysis can take a few minutes on the hosted backend, especially when annotated video is enabled.
             </p>
@@ -693,32 +841,65 @@ function App() {
 
           {error && <p className="error-text">{error}</p>}
         </div>
+        )}
 
-        {isAnalyzing && (
-          <section className="loading-panel" aria-live="polite">
-            <div className="loading-spinner" aria-hidden="true" />
-            <div>
-              <div className="loading-header">
-                <h2>Analyzing your shot</h2>
-                <div className="elapsed-timer" aria-live="polite">
-                  <span>Running time</span>
-                  <strong>{formatElapsedTime(analysisElapsedSeconds)}</strong>
-                </div>
-              </div>
+        {appView === "analyzing" && (
+          <section className="analysis-loading-screen" aria-live="polite">
+            <div className="loading-orbit" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </div>
+            <div className="loading-copy">
+              <p className="eyebrow">Shot analysis in progress</p>
+              <h1>Reading body motion frame by frame.</h1>
               <p>
-                The backend is processing pose detection, metrics, charts, and optional annotated video. This can take a few
-                minutes on Render's low-CPU instance. Camera view: {titleCase(cameraView)}.
+                Pose tracking, phase detection, scoring, coaching frames, charts, and optional annotated video are being
+                generated. Hosted analysis can take a few minutes on Render's low-CPU instance.
               </p>
+            </div>
+            <div className="loading-dashboard">
+              <div className="elapsed-timer large" aria-live="polite">
+                <span>Running time</span>
+                <strong>{formatElapsedTime(analysisElapsedSeconds)}</strong>
+              </div>
+              <div className="loading-steps" aria-hidden="true">
+                <span>Upload locked</span>
+                <span>Pose map</span>
+                <span>Release scan</span>
+                <span>Report render</span>
+              </div>
               <div className="loading-bar" aria-hidden="true">
                 <span />
               </div>
+              <p>Camera view: {titleCase(cameraView)}. Shooting hand: {titleCase(shootingSide)}.</p>
             </div>
           </section>
         )}
 
-        <section className="history-panel">
+        {appView === "report" && (
+          <section className="report-hero">
+            <div>
+              <p className="eyebrow">Analysis complete</p>
+              <h1>Your shot report is ready.</h1>
+              <p>
+                Review the score, reliability, priorities, evidence frames, charts, and annotated video from this analysis.
+              </p>
+            </div>
+            <button type="button" onClick={startNewAnalysis}>
+              Analyze another shot
+            </button>
+          </section>
+        )}
+
+        {appView === "history" && (
+        <section className="history-panel history-screen stage-card">
           <div className="section-header">
-            <h2>Recent Analyses</h2>
+            <div>
+              <p className="eyebrow dark">Shot library</p>
+              <h2>Recent Analyses</h2>
+              <p className="subtle">Open saved reports or compare two shots from the same account.</p>
+            </div>
             <div className="header-actions">
               <button
                 className="secondary-button"
@@ -794,6 +975,7 @@ function App() {
             </p>
           )}
         </section>
+        )}
 
         {comparison && (
           <section className="comparison-panel">
@@ -851,12 +1033,20 @@ function App() {
         )}
 
         {result && (
-          <div className="results-grid" ref={resultsSectionRef}>
+          <div className="results-grid stage-card" ref={resultsSectionRef}>
             <section className="score-panel">
               <div>
                 <p className="eyebrow">Shot Score</p>
                 <div className="score">{result.score}</div>
                 <p className="subtle">Shooting side: {result.shooting_side}</p>
+                {result.metrics?.shooting_side_source && (
+                  <p className="subtle">
+                    Hand source: {result.metrics.shooting_side_source}
+                    {result.metrics.shooting_side_source === "auto" && result.metrics.shooting_side_confidence !== undefined
+                      ? ` (${formatMetric(result.metrics.shooting_side_confidence, 2)} confidence)`
+                      : ""}
+                  </p>
+                )}
                 <p className="subtle">Camera view: {titleCase(result.camera_view || "side")}</p>
                 <button
                   className="best-shot-button"
@@ -878,6 +1068,32 @@ function App() {
               </ul>
             </section>
 
+            {result.quality_warnings?.length > 0 && (
+              <section className="quality-panel wide">
+                <div className="section-header">
+                  <div>
+                    <h2>Quality Warnings</h2>
+                    <p className="subtle">These items can affect how much you should trust the score.</p>
+                  </div>
+                  <strong className={`quality-badge ${result.reliability?.label || "medium"}`}>
+                    {result.quality_warnings.length}
+                  </strong>
+                </div>
+                <div className="quality-list">
+                  {result.quality_warnings.map((warning) => (
+                    <article className={`quality-warning ${warning.severity}`} key={`${warning.title}-${warning.detail}`}>
+                      <div>
+                        <span>{warning.severity}</span>
+                        <strong>{warning.title}</strong>
+                      </div>
+                      <p>{warning.detail}</p>
+                      <p>{warning.suggestion}</p>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            )}
+
             {result.reliability && (
               <section className="reliability-panel wide">
                 <div className="section-header">
@@ -897,6 +1113,93 @@ function App() {
                       <span>{check.detail}</span>
                     </div>
                   ))}
+                </div>
+              </section>
+            )}
+
+            {ballTracking && (
+              <section className="ball-panel wide">
+                <div className="section-header">
+                  <div>
+                    <p className="eyebrow dark">Beta</p>
+                    <h2>Ball Tracking</h2>
+                    <p className="subtle">
+                      {ballTracking.note || "Ball tracking is informational and does not affect the score yet."}
+                    </p>
+                    {ballTracking.detector_message && <p className="subtle">{ballTracking.detector_message}</p>}
+                  </div>
+                  <strong className={`ball-status ${ballTracking.status || "not_detected"}`}>
+                    {titleCase(ballTracking.status || "not_detected")}
+                  </strong>
+                </div>
+                <div className="ball-metrics">
+                  <div>
+                    <span>Detector</span>
+                    <strong>{titleCase(ballTracking.detector_backend || "unknown")}</strong>
+                  </div>
+                  {ballTracking.roboflow_model_id && (
+                    <div>
+                      <span>Roboflow model</span>
+                      <strong>{ballTracking.roboflow_model_id}</strong>
+                    </div>
+                  )}
+                  <div>
+                    <span>YOLO image size</span>
+                    <strong>{formatMetric(ballTracking.yolo_image_size)}</strong>
+                  </div>
+                  <div>
+                    <span>Detector confidence</span>
+                    <strong>{formatMetric(ballTracking.yolo_confidence)}</strong>
+                  </div>
+                  <div>
+                    <span>Close visibility</span>
+                    <strong>{formatMetric((ballTracking.close_visibility_ratio || 0) * 100, 1)}%</strong>
+                  </div>
+                  <div>
+                    <span>Raw visibility</span>
+                    <strong>{formatMetric((ballTracking.visibility_ratio || 0) * 100, 1)}%</strong>
+                  </div>
+                  <div>
+                    <span>Ball release frame</span>
+                    <strong>{formatMetric(ballTracking.ball_release_frame)}</strong>
+                  </div>
+                  <div>
+                    <span>Pose vs ball release</span>
+                    <strong>{formatDelta(ballTracking.release_frame_delta)}</strong>
+                  </div>
+                  <div>
+                    <span>Arc height</span>
+                    <strong>{formatMetric(ballTracking.arc_height)}</strong>
+                  </div>
+                  <div>
+                    <span>Avg wrist distance</span>
+                    <strong>{formatMetric(ballTracking.avg_wrist_distance)}</strong>
+                  </div>
+                  <div>
+                    <span>Tracked frames</span>
+                    <strong>
+                      {formatMetric(ballTracking.close_detected_frames || ballTracking.detected_frames)}/{formatMetric(ballTracking.total_frames)}
+                    </strong>
+                  </div>
+                  {ballTracking.roboflow_requested_frames !== undefined && (
+                    <div>
+                      <span>Remote frames</span>
+                      <strong>
+                        {formatMetric(ballTracking.roboflow_requested_frames)}
+                        {ballTracking.roboflow_max_workers ? ` / ${formatMetric(ballTracking.roboflow_max_workers)} workers` : ""}
+                      </strong>
+                    </div>
+                  )}
+                  <div>
+                    <span>Sources</span>
+                    <strong>
+                      {ballTracking.candidate_source_counts
+                        ? Object.entries(ballTracking.candidate_source_counts)
+                            .map(([source, count]) => `${source}: ${count}`)
+                            .join(", ")
+                        : "N/A"}
+                    </strong>
+                  </div>
                 </div>
               </section>
             )}
@@ -1010,7 +1313,7 @@ function App() {
             )}
           </div>
         )}
-          </>
+          </div>
         )}
         {selectedEvidenceItem && selectedEvidenceFrameUrl && (
           <div className="modal-backdrop" role="presentation" onClick={() => setSelectedEvidenceItem(null)}>

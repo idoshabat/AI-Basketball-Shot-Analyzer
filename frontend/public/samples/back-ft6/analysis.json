@@ -1,0 +1,265 @@
+{
+  "run_id": "2026-08-16_233612_ft6_0b01110c",
+  "analysis_version": "rule-based-mvp-2026-08-15",
+  "owner_user_id": "91900100-5e72-471b-9ed7-ca2f923f25b9",
+  "run_dir": "storage/analyses/2026-08-16_233612_ft6_0b01110c",
+  "video": "storage/analyses/2026-08-16_233612_ft6_0b01110c/input/original.mp4",
+  "score": 92,
+  "shooting_side": "right",
+  "camera_view": "back",
+  "reliability": {
+    "score": 100,
+    "label": "high",
+    "checks": [
+      {
+        "name": "Release detection",
+        "status": "pass",
+        "detail": "Release timing confidence is high."
+      },
+      {
+        "name": "Video length",
+        "status": "pass",
+        "detail": "174 usable pose frames were analyzed."
+      },
+      {
+        "name": "Post-release frames",
+        "status": "pass",
+        "detail": "Enough frames exist after release."
+      },
+      {
+        "name": "Full-body landmarks",
+        "status": "pass",
+        "detail": "Upper body, hips, and ankles are available."
+      },
+      {
+        "name": "Single player",
+        "status": "pass",
+        "detail": "Only one tracked player was detected."
+      },
+      {
+        "name": "Player size",
+        "status": "pass",
+        "detail": "The tracked player is large enough for pose analysis."
+      },
+      {
+        "name": "Front/back line metrics",
+        "status": "pass",
+        "detail": "Feet, shin, forearm, and follow-through line metrics were measured."
+      },
+      {
+        "name": "Foot landmarks",
+        "status": "pass",
+        "detail": "Heel and toe landmarks were detected for foot direction."
+      }
+    ]
+  },
+  "quality_warnings": [],
+  "video_metadata": {
+    "fps": 23.801652892561982,
+    "frame_count": 240,
+    "width": 1280,
+    "height": 720,
+    "scene_sampled_frames": 6,
+    "scene_max_people_count": 2,
+    "scene_multi_person_frame_ratio": 0.17
+  },
+  "metrics": {
+    "max_elbow_angle": 179.89028976810195,
+    "min_knee_angle": 171.68740383184814,
+    "elbow_angle_std": 49.52285997415385,
+    "max_detected_people_count": 1,
+    "avg_detected_people_count": 1.0,
+    "multi_person_frame_ratio": 0.0,
+    "scene_max_people_count": 2,
+    "scene_multi_person_frame_ratio": 0.17,
+    "scene_sampled_frames": 6,
+    "median_selected_pose_area": 0.0701,
+    "release_frame": 37,
+    "release_detection_method": "velocity_transition",
+    "release_confidence": 0.96,
+    "release_confidence_label": "high",
+    "shooting_side_confidence": 0.01,
+    "shooting_side_source": "manual",
+    "detected_shooting_side": "left",
+    "requested_shooting_side": "right",
+    "right_shooting_side_score": 0.8895,
+    "left_shooting_side_score": 0.8905,
+    "shooting_side_signals": {
+      "right": {
+        "score": 0.8895,
+        "max_elbow_angle": 179.89,
+        "release_elbow_angle": 166.98,
+        "wrist_y_range": 0.7717,
+        "wrist_x_range": 0.0941,
+        "highest_wrist_y": 0.1774,
+        "wrist_above_shoulder_ratio": 0.6322,
+        "high_extended_ratio": 0.2011,
+        "release_method": "velocity_transition"
+      },
+      "left": {
+        "score": 0.8905,
+        "max_elbow_angle": 179.99,
+        "release_elbow_angle": 179.57,
+        "wrist_y_range": 0.7534,
+        "wrist_x_range": 0.1434,
+        "highest_wrist_y": 0.2048,
+        "wrist_above_shoulder_ratio": 0.2529,
+        "high_extended_ratio": 0.0805,
+        "release_method": "velocity_transition"
+      }
+    },
+    "release_elbow_angle": 166.98234879177713,
+    "release_knee_angle": 174.42169243784923,
+    "release_wrist_y": 0.1773729622364044,
+    "release_wrist_y_velocity": -0.0049168765544891,
+    "follow_through_frames": 22,
+    "follow_through_window": 137,
+    "follow_through_ratio": 0.16058394160583941,
+    "follow_through_end_frame": 60,
+    "follow_through_wrist_drop": 0.18761312961578372,
+    "follow_through_drop_from_best": 0.17404627402623496,
+    "follow_through_status": "ended",
+    "follow_through_end_reason": "sustained_posture_loss",
+    "hip_load_frame": 14,
+    "hip_deepest_frame": 20,
+    "knee_load_frame": 37,
+    "dip_load_start_frame": 10,
+    "dip_load_end_frame": 20,
+    "hip_load_y": 0.6202855408191681,
+    "release_hip_y": 0.5545411109924316,
+    "hip_rise": 0.06574442982673645,
+    "load_score": 0.6874302447374689,
+    "load_detection_method": "combined_hip_depth_and_knee_bend",
+    "ankle_baseline_y": 0.8690803200006485,
+    "min_jump_ankle_y": 0.8535047769546509,
+    "ankle_lift": 0.01557554304599762,
+    "jump_window_start": 32,
+    "jump_window_end": 52,
+    "shoulder_level_delta": 0.004030495882034302,
+    "body_lean": 0.07384433256959742,
+    "arm_stack_error": 0.2494463094416326,
+    "knee_to_ankle_alignment_error": 0.12857847116199692,
+    "leg_symmetry_error": 0.10175652005765128,
+    "left_shin_angle_to_floor": 87.9189630628123,
+    "right_shin_angle_to_floor": 89.27168480440935,
+    "left_shin_vertical_error": 2.0810369371877044,
+    "right_shin_vertical_error": 0.7283151955906533,
+    "shin_parallel_error": 1.3527217415970512,
+    "left_foot_angle_to_floor": 76.14390844047477,
+    "right_foot_angle_to_floor": 64.84894590316765,
+    "left_foot_floor_error": 76.14390844047477,
+    "right_foot_floor_error": 64.84894590316765,
+    "foot_parallel_error": 11.294962537307129,
+    "forearm_angle_to_floor": 89.63953486796359,
+    "forearm_vertical_error": 0.36046513203640984,
+    "follow_through_line_angle_to_floor": 89.78944162323555,
+    "follow_through_vertical_error": 0.21055837676445321,
+    "alignment_status": "measured",
+    "ball_tracking_status": "tracked",
+    "ball_visibility_ratio": 1.0,
+    "ball_close_visibility_ratio": 1.0,
+    "ball_release_frame": 29,
+    "ball_release_frame_delta": -8,
+    "ball_arc_height": 0.2778,
+    "ball_avg_wrist_distance": 0.0351,
+    "ball_detector_backend": "heuristic"
+  },
+  "phases": {
+    "setup": {
+      "start_frame": 1,
+      "end_frame": 9
+    },
+    "dip_load": {
+      "start_frame": 10,
+      "end_frame": 20
+    },
+    "upward_motion": {
+      "start_frame": 21,
+      "end_frame": 36
+    },
+    "release": {
+      "start_frame": 37,
+      "end_frame": 37
+    },
+    "follow_through": {
+      "start_frame": 38,
+      "end_frame": 59
+    },
+    "recovery": {
+      "start_frame": 60,
+      "end_frame": 174
+    }
+  },
+  "feedback": [
+    "Back view selected: grading emphasizes alignment metrics visible from this camera angle.",
+    "Both lower legs stay close to vertical and parallel through the release.",
+    "Feet are not perfectly parallel; check that both feet point the same direction.",
+    "Forearm is close to vertical at release.",
+    "Follow-through line stays straight toward the basket.",
+    "Torso and shoulders stay balanced from this angle.",
+    "Release happens with a strong arm extension.",
+    "Good follow-through: shooting hand holds near max height after release.",
+    "Arm motion looks very inconsistent across the shot."
+  ],
+  "coaching_items": [
+    {
+      "title": "Make the arm path more repeatable",
+      "severity": "medium",
+      "metric": "elbow_angle_std",
+      "value": 49.52285997415385,
+      "target": "45 degrees or lower",
+      "why_it_matters": "Large variation in the shooting arm makes the release timing harder to repeat.",
+      "drill": "Shoot slow form reps from close range and keep the ball path centered every time.",
+      "phase": "full_shot",
+      "start_frame": 1,
+      "end_frame": 174,
+      "evidence_frame_file": "coaching_frame_01",
+      "evidence_frame_path": "storage/analyses/2026-08-16_233612_ft6_0b01110c/output/coaching_frame_01.jpg",
+      "evidence_frame_number": 1
+    }
+  ],
+  "files": {
+    "original_video": "storage/analyses/2026-08-16_233612_ft6_0b01110c/input/original.mp4",
+    "keypoints_csv": "storage/analyses/2026-08-16_233612_ft6_0b01110c/data/keypoints.csv",
+    "features_csv": "storage/analyses/2026-08-16_233612_ft6_0b01110c/data/features.csv",
+    "angles_chart": "samples/back-ft6/angles.png",
+    "follow_through_debug_chart": "samples/back-ft6/follow_through_debug.png",
+    "pose_video": null,
+    "annotated_video": "samples/back-ft6/annotated.webm",
+    "json_report": "storage/analyses/2026-08-16_233612_ft6_0b01110c/report.json",
+    "coaching_frame_01": "samples/back-ft6/coaching_frame_01.jpg"
+  },
+  "sample_id": "back-ft6",
+  "sample_label": "Good Back View - FT6",
+  "sample_description": "Back-view shot with clean reliability.",
+  "output_urls": {
+    "angles_chart": "/samples/back-ft6/angles.png",
+    "follow_through_debug_chart": "/samples/back-ft6/follow_through_debug.png",
+    "annotated_video": "/samples/back-ft6/annotated.webm",
+    "coaching_frame_01": "/samples/back-ft6/coaching_frame_01.jpg"
+  },
+  "ball_tracking": {
+    "status": "tracked",
+    "detected": true,
+    "detected_frames": 174,
+    "close_detected_frames": 174,
+    "total_frames": 174,
+    "visibility_ratio": 1.0,
+    "close_visibility_ratio": 1.0,
+    "ball_release_frame": 29,
+    "pose_release_frame": 37,
+    "release_frame_delta": -8,
+    "post_release_tracked_frames": 146,
+    "arc_height": 0.2778,
+    "avg_wrist_distance": 0.0351,
+    "candidate_source_counts": {
+      "circle": 174
+    },
+    "note": "Beta: ball tracking is informational and does not affect the score yet.",
+    "detector_backend": "heuristic",
+    "requested_backend": "auto",
+    "detector_message": "Using heuristic fallback detector.",
+    "model_path": null,
+    "model_error": null
+  }
+}

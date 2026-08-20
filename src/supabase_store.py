@@ -52,7 +52,7 @@ def should_upload_file(name: str) -> bool:
     if name == "original_video":
         return env_flag("SUPABASE_UPLOAD_ORIGINAL_VIDEO", False)
 
-    if name in {"keypoints_csv", "features_csv", "pose_video", "json_report"}:
+    if name in {"keypoints_csv", "features_csv", "ball_tracking_csv", "pose_video", "json_report"}:
         return env_flag("SUPABASE_UPLOAD_DEBUG_FILES", False)
 
     if name == "annotated_video":

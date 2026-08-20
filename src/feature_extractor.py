@@ -54,9 +54,19 @@ def get_coordinate(row: pd.Series, landmark_name: str, axis: str) -> float:
     return row[f"{landmark_name}_{axis}"]
 
 
+def get_optional_value(row: pd.Series, key: str, default: float = 0.0) -> float:
+    if key not in row or pd.isna(row[key]):
+        return default
+
+    return row[key]
+
+
 def extract_frame_features(row: pd.Series) -> dict:
     return {
         "frame": int(row["frame"]),
+        "detected_people_count": int(get_optional_value(row, "detected_people_count", 0)),
+        "selected_pose_area": get_optional_value(row, "selected_pose_area", 0.0),
+        "selected_pose_score": get_optional_value(row, "selected_pose_score", 0.0),
         "right_shoulder_x": get_coordinate(row, "right_shoulder", "x"),
         "right_wrist_x": get_coordinate(row, "right_wrist", "x"),
         "right_wrist_y": get_coordinate(row, "right_wrist", "y"),

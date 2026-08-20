@@ -9,8 +9,9 @@ from uuid import uuid4
 
 import cv2
 
+from ball_detector import track_ball
 from feature_extractor import extract_features
-from shot_analyzer import analyze_shot, print_report
+from shot_analyzer import analyze_shot, build_coaching_item, print_report
 from video_annotator import annotate_video
 from visualize_features import plot_angles, plot_follow_through_debug
 from video_reader import read_video
@@ -21,6 +22,200 @@ OUTPUT_DIR = PROJECT_ROOT / "output"
 STORAGE_DIR = PROJECT_ROOT / "storage"
 ANALYSES_DIR = STORAGE_DIR / "analyses"
 ANALYSIS_VERSION = "rule-based-mvp-2026-08-15"
+
+
+def safe_float(value) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+
+    return number
+
+
+def load_ball_rows(ball_tracking_path: str | Path) -> list[dict]:
+    path = Path(ball_tracking_path)
+    if not path.exists():
+        return []
+
+    rows = []
+    with path.open() as csv_file:
+        reader = csv.DictReader(csv_file)
+        for row in reader:
+            if row.get("ball_detected") != "True":
+                continue
+
+            parsed_row = {
+                "frame": int(float(row["frame"])),
+                "ball_x": safe_float(row.get("ball_x")),
+                "ball_y": safe_float(row.get("ball_y")),
+                "ball_confidence": safe_float(row.get("ball_confidence")) or 0.0,
+                "distance_to_wrist": safe_float(row.get("distance_to_wrist")),
+                "candidate_source": row.get("candidate_source"),
+            }
+            if parsed_row["ball_x"] is not None and parsed_row["ball_y"] is not None:
+                rows.append(parsed_row)
+
+    return rows
+
+
+def detected_ball_rows_near_release(rows: list[dict], release_frame: int | None, before: int = 12, after: int = 24) -> list[dict]:
+    if release_frame is None:
+        return rows
+
+    return [row for row in rows if release_frame - before <= row["frame"] <= release_frame + after]
+
+
+def add_ball_based_insights(analysis: dict, ball_tracking: dict, ball_tracking_path: str | Path) -> None:
+    camera_view = analysis.get("camera_view", "side")
+    metrics = analysis["metrics"]
+    phases = analysis["phases"]
+    feedback = analysis["feedback"]
+    coaching_items = analysis["coaching_items"]
+    release_frame = metrics.get("release_frame")
+    ball_rows = load_ball_rows(ball_tracking_path)
+    release_rows = detected_ball_rows_near_release(ball_rows, release_frame)
+    high_confidence_rows = [row for row in release_rows if row["ball_confidence"] >= 0.35]
+
+    metrics["ball_release_confidence_label"] = "unavailable"
+    metrics["ball_post_release_upward_frames"] = None
+    metrics["ball_side_arc_quality"] = None
+    metrics["ball_front_back_line_drift"] = None
+    metrics["ball_release_wrist_distance"] = ball_tracking.get("avg_wrist_distance")
+
+    if not high_confidence_rows:
+        feedback.append("Ball tracking was not stable enough to add ball-flight feedback.")
+        coaching_items.append(
+            build_coaching_item(
+                title="Improve ball visibility for ball-flight feedback",
+                severity="low",
+                metric="ball_visibility_ratio",
+                value=ball_tracking.get("visibility_ratio"),
+                target="Clear basketball detections around release",
+                why_it_matters="Ball-based feedback needs the ball visible near the hand and after release.",
+                drill="Record with the ball clearly visible against a simple background and avoid cropping the release path.",
+                phase="release",
+                start_frame=release_frame,
+                end_frame=release_frame,
+            )
+        )
+        return
+
+    ball_release_frame = ball_tracking.get("ball_release_frame")
+    if ball_release_frame is not None and release_frame is not None:
+        delta = ball_release_frame - release_frame
+        metrics["ball_release_confidence_label"] = "aligned" if abs(delta) <= 3 else "offset"
+        if abs(delta) <= 3:
+            feedback.append("Ball tracking confirms the release timing within a few frames of the pose estimate.")
+        else:
+            feedback.append("Ball tracking suggests the true ball release may be offset from the pose-only estimate.")
+            coaching_items.append(
+                build_coaching_item(
+                    title="Review the actual ball release moment",
+                    severity="medium",
+                    metric="ball_release_frame_delta",
+                    value=delta,
+                    target="Within 3 frames of the pose release estimate",
+                    why_it_matters="If the ball separates earlier or later than the body estimate, timing feedback can be less precise.",
+                    drill="Use the annotated video and pause around release to verify when the ball leaves the fingers.",
+                    phase="release",
+                    start_frame=ball_release_frame,
+                    end_frame=ball_release_frame,
+                )
+            )
+
+    post_release_rows = [
+        row
+        for row in high_confidence_rows
+        if ball_release_frame is not None and ball_release_frame <= row["frame"] <= ball_release_frame + 18
+    ]
+    if camera_view == "side":
+        if len(post_release_rows) >= 3:
+            release_row = min(post_release_rows, key=lambda row: abs(row["frame"] - ball_release_frame))
+            upward_rows = [row for row in post_release_rows if row["ball_y"] < release_row["ball_y"] - 0.02]
+            arc_height = ball_tracking.get("arc_height") or 0.0
+            metrics["ball_post_release_upward_frames"] = len(upward_rows)
+
+            if arc_height >= 0.08 and len(upward_rows) >= 3:
+                metrics["ball_side_arc_quality"] = "good"
+                feedback.append("Side-view ball path shows a visible upward arc after release.")
+            elif arc_height >= 0.04:
+                metrics["ball_side_arc_quality"] = "moderate"
+                feedback.append("Side-view ball path has some lift, but the arc could be higher.")
+                coaching_items.append(
+                    build_coaching_item(
+                        title="Create a slightly higher ball arc",
+                        severity="medium",
+                        metric="ball_arc_height",
+                        value=arc_height,
+                        target="0.08 or higher normalized side-view rise",
+                        why_it_matters="From the side, a flatter ball path usually leaves less margin over the rim.",
+                        drill="Shoot close form reps focusing on a relaxed upward finish and a high hand through release.",
+                        phase="release",
+                        start_frame=ball_release_frame,
+                        end_frame=ball_release_frame + 18,
+                    )
+                )
+            else:
+                metrics["ball_side_arc_quality"] = "flat"
+                feedback.append("Side-view ball path looks flat after release.")
+                coaching_items.append(
+                    build_coaching_item(
+                        title="Add more upward lift to the ball path",
+                        severity="high",
+                        metric="ball_arc_height",
+                        value=arc_height,
+                        target="0.04 or higher normalized side-view rise",
+                        why_it_matters="A very flat ball path gives the shot less vertical margin and can make distance control harder.",
+                        drill="Use one-hand form shots and finish with fingers high, letting the ball rise before it travels forward.",
+                        phase="release",
+                        start_frame=ball_release_frame,
+                        end_frame=ball_release_frame + 18,
+                    )
+                )
+        else:
+            feedback.append("Side-view arc feedback needs more ball detections after release.")
+    else:
+        if len(post_release_rows) >= 3:
+            release_row = min(post_release_rows, key=lambda row: abs(row["frame"] - ball_release_frame))
+            x_values = [row["ball_x"] for row in post_release_rows]
+            line_drift = max(abs(x - release_row["ball_x"]) for x in x_values)
+            metrics["ball_front_back_line_drift"] = round(line_drift, 4)
+            if line_drift <= 0.035:
+                feedback.append("Ball path stays close to the release line from this front/back view.")
+            elif line_drift <= 0.07:
+                feedback.append("Ball path drifts slightly sideways from this front/back view.")
+                coaching_items.append(
+                    build_coaching_item(
+                        title="Keep the ball on the release line",
+                        severity="medium",
+                        metric="ball_front_back_line_drift",
+                        value=round(line_drift, 4),
+                        target="0.035 or lower normalized sideways drift",
+                        why_it_matters="From front/back view, sideways ball drift can reveal a release that pushes across the body.",
+                        drill="Shoot front-view form reps and freeze with wrist, elbow, and ball on the same vertical line.",
+                        phase="release",
+                        start_frame=ball_release_frame,
+                        end_frame=ball_release_frame + 18,
+                    )
+                )
+            else:
+                feedback.append("Ball path drifts sideways from this front/back view.")
+                coaching_items.append(
+                    build_coaching_item(
+                        title="Reduce sideways ball drift",
+                        severity="high",
+                        metric="ball_front_back_line_drift",
+                        value=round(line_drift, 4),
+                        target="0.035 or lower normalized sideways drift",
+                        why_it_matters="Sideways drift after release often means the wrist or forearm is not finishing through the shot line.",
+                        drill="Use close-range one-hand reps and hold the follow-through on the center line.",
+                        phase="release",
+                        start_frame=ball_release_frame,
+                        end_frame=ball_release_frame + 18,
+                    )
+                )
+        feedback.append("Arc height is not graded from front/back view because camera depth distorts the true shot arc.")
 
 
 def slugify(value: str) -> str:
@@ -45,6 +240,7 @@ def create_analysis_run(video_path: str, run_dir: str | Path | None = None) -> d
         "input_video": run_path / "input" / f"original{Path(video_path).suffix.lower()}",
         "keypoints": run_path / "data" / "keypoints.csv",
         "features": run_path / "data" / "features.csv",
+        "ball_tracking": run_path / "data" / "ball_tracking.csv",
         "pose_video": run_path / "output" / "pose.mp4",
         "angles_chart": run_path / "output" / "angles.png",
         "follow_through_debug_chart": run_path / "output" / "follow_through_debug.png",
@@ -79,6 +275,7 @@ def save_report(video_path: str, result: dict, report_path: str | Path | None = 
         "original_video": format_path(result["input_video_path"]),
         "keypoints_csv": format_path(result["keypoints_path"]),
         "features_csv": format_path(result["features_path"]),
+        "ball_tracking_csv": format_path(result["ball_tracking_path"]),
         "angles_chart": format_path(result["chart_path"]),
         "follow_through_debug_chart": format_path(result["follow_through_debug_chart_path"]),
         "pose_video": format_path(result["output_path"]),
@@ -97,8 +294,10 @@ def save_report(video_path: str, result: dict, report_path: str | Path | None = 
         "shooting_side": result["analysis"]["shooting_side"],
         "camera_view": result["analysis"]["camera_view"],
         "reliability": result["analysis"]["reliability"],
+        "quality_warnings": result["analysis"].get("quality_warnings", []),
         "video_metadata": result["video_metadata"],
         "metrics": result["analysis"]["metrics"],
+        "ball_tracking": result.get("ball_tracking", {}),
         "phases": result["analysis"]["phases"],
         "feedback": result["analysis"]["feedback"],
         "coaching_items": result["analysis"]["coaching_items"],
@@ -309,6 +508,7 @@ def analyze_video(
     run_dir: str | Path | None = None,
     copy_input: bool = True,
     camera_view: str = "side",
+    shooting_side: str = "auto",
     owner_user_id: str = "guest",
 ) -> dict:
     run_paths = create_analysis_run(video_path, run_dir)
@@ -333,7 +533,33 @@ def analyze_video(
 
     keypoints_path = video_result["keypoints_path"]
     features_path = extract_features(str(keypoints_path), str(run_paths["features"]))
-    analysis = analyze_shot(str(features_path), camera_view=camera_view)
+    analysis = analyze_shot(
+        str(features_path),
+        camera_view=camera_view,
+        shooting_side=shooting_side,
+        input_quality=video_result["metadata"],
+    )
+    ball_tracking = track_ball(
+        str(input_video_path),
+        str(features_path),
+        str(run_paths["ball_tracking"]),
+        analysis["shooting_side"],
+        analysis["metrics"].get("release_frame"),
+    )
+    analysis["ball_tracking"] = ball_tracking
+    analysis["metrics"].update(
+        {
+            "ball_tracking_status": ball_tracking["status"],
+            "ball_detector_backend": ball_tracking["detector_backend"],
+            "ball_visibility_ratio": ball_tracking["visibility_ratio"],
+            "ball_close_visibility_ratio": ball_tracking["close_visibility_ratio"],
+            "ball_release_frame": ball_tracking["ball_release_frame"],
+            "ball_release_frame_delta": ball_tracking["release_frame_delta"],
+            "ball_arc_height": ball_tracking["arc_height"],
+            "ball_avg_wrist_distance": ball_tracking["avg_wrist_distance"],
+        }
+    )
+    add_ball_based_insights(analysis, ball_tracking, run_paths["ball_tracking"])
     chart_path = (
         plot_angles(str(features_path), output_path=str(run_paths["angles_chart"]), phases=analysis["phases"])
         if save_chart
@@ -354,6 +580,9 @@ def analyze_video(
             str(features_path),
             output_path=str(run_paths["annotated_video"]),
             camera_view=camera_view,
+            shooting_side=shooting_side,
+            input_quality=video_result["metadata"],
+            ball_tracking_csv_path=run_paths["ball_tracking"],
         )
         if save_annotated_video
         else None
@@ -373,12 +602,14 @@ def analyze_video(
         "input_video_path": input_video_path,
         "keypoints_path": keypoints_path,
         "features_path": features_path,
+        "ball_tracking_path": run_paths["ball_tracking"],
         "chart_path": chart_path,
         "follow_through_debug_chart_path": follow_through_debug_chart_path,
         "output_path": video_result["output_path"],
         "annotated_video_path": annotated_video_path,
         "coaching_frame_paths": coaching_frame_paths,
         "video_metadata": video_result["metadata"],
+        "ball_tracking": ball_tracking,
         "analysis": analysis,
         "report_path": None,
     }
@@ -396,6 +627,7 @@ def main() -> None:
     parser.add_argument("--save-report", action="store_true", help="Save a JSON report with metrics, feedback, and file paths")
     parser.add_argument("--display", action="store_true", help="Show the processed video while analyzing")
     parser.add_argument("--camera-view", choices=["side", "front", "back"], default="side", help="Camera angle used for view-specific scoring")
+    parser.add_argument("--shooting-side", choices=["auto", "right", "left"], default="auto", help="Shooting hand override")
     args = parser.parse_args()
 
     result = analyze_video(
@@ -406,10 +638,12 @@ def main() -> None:
         save_json_report=args.save_report,
         display=args.display,
         camera_view=args.camera_view,
+        shooting_side=args.shooting_side,
     )
 
     print(f"Saved keypoints CSV: {result['keypoints_path']}")
     print(f"Saved features CSV: {result['features_path']}")
+    print(f"Saved ball tracking CSV: {result['ball_tracking_path']}")
     if result["chart_path"]:
         print(f"Saved angles chart: {result['chart_path']}")
     if result["follow_through_debug_chart_path"]:
@@ -420,6 +654,7 @@ def main() -> None:
         print(f"Saved annotated video: {result['annotated_video_path']}")
     if result["report_path"]:
         print(f"Saved JSON report: {result['report_path']}")
+    print(f"Ball tracking: {result['ball_tracking']['status']} ({result['ball_tracking']['detected_frames']}/{result['ball_tracking']['total_frames']} frames)")
     print()
     print_report(result["analysis"])
 

@@ -12,6 +12,7 @@ The goal of this project is not just to detect pose landmarks. It behaves like a
 - Detect player pose with MediaPipe.
 - Extract body keypoints and joint-angle features.
 - Estimate shooting side, release frame, knee bend, jump lift, arm extension, and follow-through timing.
+- Track the basketball as a beta signal for visibility, release-frame comparison, and arc hints.
 - Generate rule-based coaching feedback and a shot score.
 - Show priority improvement cards with target metrics and drills.
 - Generate charts and optional annotated video.
@@ -28,7 +29,7 @@ For a quick project walkthrough:
 
 1. Start the backend and frontend.
 2. Open the app at `http://127.0.0.1:5173`.
-3. Click `Load Sample Result` to show the dashboard and annotated video instantly.
+3. Choose a demo sample and click `Load Demo` to show the dashboard and annotated video instantly.
 4. Upload a real shot video.
 5. Review the score, feedback, improvement priorities, charts, and annotated video.
 6. Click `Compare to Best` after multiple analyses to compare the current shot with the best saved one.
@@ -71,7 +72,7 @@ In deployed mode, Supabase becomes the persistent source of truth:
 - Supabase Storage stores the UI assets by default: charts, annotated video, and evidence frame images. Original videos, CSVs, and debug files are optional to keep Render memory usage lower.
 - The API returns signed Storage URLs for saved media so Vercel and Render are no longer dependent on Render's temporary filesystem.
 
-A compact sample result is available at [samples/sample-analysis.json](samples/sample-analysis.json), and the frontend demo data lives at `frontend/public/samples/sample-analysis.json`. The sample annotated video is served from `frontend/public/samples/sample-annotated.webm`.
+Frontend demo data lives under `frontend/public/samples/`. The app includes side-view, front-view, back-view, and bad-input demo samples so visitors can test both clean analysis and quality-warning behavior without uploading a video.
 
 ## Setup
 
@@ -87,6 +88,37 @@ Install backend dependencies:
 ```bash
 pip install -r requirements.txt
 ```
+
+Optional YOLO ball tracking:
+
+```bash
+pip install -r requirements-yolo.txt
+```
+
+Then place a basketball/sports-ball YOLO model at:
+
+```text
+model/basketball_yolo.pt
+```
+
+or set `BALL_DETECTION_MODEL_PATH` to the model file. Without this optional model, the app still runs and uses the heuristic fallback ball tracker.
+
+For reliable ball tracking, fine-tune a basketball-specific model with [docs/yolo-ball-training.md](docs/yolo-ball-training.md). The repo includes scripts to extract frames, split YOLO labels, train, and copy the best model into `model/basketball_yolo_custom.pt`.
+
+Optional Roboflow hosted detector:
+
+```bash
+BALL_DETECTION_BACKEND=roboflow
+ROBOFLOW_MODEL_ID=basketball-detector-n4omu/1
+ROBOFLOW_API_KEY=your-roboflow-api-key
+ROBOFLOW_API_URL=https://detect.roboflow.com
+ROBOFLOW_FRAME_STRIDE=2
+ROBOFLOW_MAX_WORKERS=8
+ROBOFLOW_RELEASE_WINDOW_BEFORE=18
+ROBOFLOW_RELEASE_WINDOW_AFTER=42
+```
+
+Use this when your custom Roboflow model is trained and you want the backend to call the hosted detector while still generating the same ball tracking CSV and annotated video.
 
 The MediaPipe pose model should exist at:
 
@@ -224,6 +256,18 @@ Analyze shot features:
 python src/shot_analyzer.py data/ft2_features.csv
 ```
 
+Track the ball with the default auto backend:
+
+```bash
+python src/ball_detector.py videos/ft2.mp4 data/ft2_features.csv --output data/ft2_ball_tracking.csv --shooting-side right --release-frame 48
+```
+
+Track the ball with YOLO:
+
+```bash
+python src/ball_detector.py videos/ft2.mp4 data/ft2_features.csv --output data/ft2_ball_tracking.csv --shooting-side right --release-frame 48 --backend yolo --model-path model/basketball_yolo.pt --yolo-confidence 0.05
+```
+
 Create an angle chart:
 
 ```bash
@@ -296,8 +340,8 @@ For a faster hosted demo:
 
 - Disable annotated video by default for public demos, or
 - Use a larger Render instance, or
-- Keep one sample result available through `Load Sample Result` so visitors can see the product immediately.
+- Keep the built-in sample selector available through `Load Demo` so visitors can see side, front, back, and bad-input behavior immediately.
 
 ## Project Status
 
-This is a polished rule-based MVP. It does not yet detect the ball or rim. The next major ML upgrade would be YOLO-based ball/rim tracking, but the current version already demonstrates the full product loop: video in, biomechanics out, coaching feedback, saved history, and comparison.
+This is a polished rule-based MVP with beta ball tracking. Ball tracking is YOLO-first when a configured model is available, with a heuristic fallback when it is not. It does not yet detect the rim or use ball tracking in the score. The next major ML upgrade would be a custom fine-tuned basketball/rim model, but the current version already demonstrates the full product loop: video in, biomechanics and ball-tracking hints out, coaching feedback, saved history, and comparison.

@@ -11,11 +11,13 @@ frontend/node_modules/
 frontend/dist/
 
 data/*.csv
+data/ball_yolo/
 output/*.mp4
 output/*.webm
 output/*.png
 output/*.json
 storage/analyses/
+runs/
 
 videos/*
 !videos/.gitkeep

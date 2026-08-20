@@ -1,4 +1,5 @@
 import argparse
+import csv
 from pathlib import Path
 
 import cv2
@@ -49,6 +50,51 @@ def get_current_phase(frame_number: int, phases: dict) -> str:
     return "unlabeled"
 
 
+def load_ball_tracking_rows(ball_tracking_csv_path: str | Path | None) -> dict[int, dict]:
+    if not ball_tracking_csv_path:
+        return {}
+
+    path = Path(ball_tracking_csv_path)
+    if not path.exists():
+        return {}
+
+    rows = {}
+    with path.open() as csv_file:
+        reader = csv.DictReader(csv_file)
+        for row in reader:
+            try:
+                rows[int(float(row["frame"]))] = row
+            except (KeyError, TypeError, ValueError):
+                continue
+
+    return rows
+
+
+def draw_ball_overlay(frame, ball_row: dict | None) -> None:
+    if not ball_row or ball_row.get("ball_detected") != "True":
+        return
+
+    try:
+        ball_x = float(ball_row["ball_x"])
+        ball_y = float(ball_row["ball_y"])
+        confidence = float(ball_row["ball_confidence"])
+    except (KeyError, TypeError, ValueError):
+        return
+
+    source = ball_row.get("candidate_source") or ""
+    minimum_confidence = 0.05 if source.startswith(("roboflow:", "yolo:")) else 0.48
+    if confidence < minimum_confidence:
+        return
+
+    height, width = frame.shape[:2]
+    center = (int(ball_x * width), int(ball_y * height))
+    radius = max(12, int(float(ball_row.get("ball_radius") or 0.015) * max(width, height)))
+    cv2.circle(frame, center, radius + 5, (12, 14, 18), 4, cv2.LINE_AA)
+    cv2.circle(frame, center, radius + 3, (87, 255, 201), 3, cv2.LINE_AA)
+    label = "Ball" if source.startswith(("roboflow:", "yolo:")) else "Ball?"
+    draw_text(frame, f"{label} {confidence:.2f}", (center[0] + radius + 8, max(32, center[1] - 8)), scale=0.48, color=(87, 255, 201))
+
+
 def draw_overlay(frame, frame_number: int, analysis: dict) -> None:
     metrics = analysis["metrics"]
     phases = analysis["phases"]
@@ -76,7 +122,11 @@ def draw_overlay(frame, frame_number: int, analysis: dict) -> None:
     draw_text(frame, f"Hip rise: {metrics['hip_rise']:.3f}", (12, 280), scale=0.5)
     draw_text(frame, f"Ankle lift: {metrics['ankle_lift']:.3f}", (12, 308), scale=0.5)
 
-    if frame_number == release_frame:
+    has_high_quality_warning = any(warning.get("severity") == "high" for warning in analysis.get("quality_warnings", []))
+
+    if has_high_quality_warning:
+        draw_banner(frame, "INPUT QUALITY WARNING: tracked pose may not be the shooter", (40, 40, 190))
+    elif frame_number == release_frame:
         draw_banner(
             frame,
             f"RELEASE: {metrics['release_detection_method']} / {metrics['release_confidence_label'].upper()}",
@@ -99,9 +149,12 @@ def annotate_video(
     features_csv_path: str,
     output_path: str | None = None,
     camera_view: str = "side",
+    shooting_side: str = "auto",
+    input_quality: dict | None = None,
+    ball_tracking_csv_path: str | Path | None = None,
 ) -> Path:
     path = resolve_video_path(video_path)
-    analysis = analyze_shot(features_csv_path, camera_view=camera_view)
+    analysis = analyze_shot(features_csv_path, camera_view=camera_view, shooting_side=shooting_side, input_quality=input_quality)
     annotated_path = Path(output_path) if output_path else build_annotated_video_path(path)
 
     cap = cv2.VideoCapture(str(path))
@@ -110,6 +163,7 @@ def annotate_video(
 
     writer = create_video_writer(cap, annotated_path)
     pose_detector = PoseDetector()
+    ball_rows = load_ball_tracking_rows(ball_tracking_csv_path)
 
     try:
         frame_number = 0
@@ -121,6 +175,7 @@ def annotate_video(
             frame_number += 1
             pose_result = pose_detector.detect(frame)
             frame = pose_detector.draw_pose(frame, pose_result)
+            draw_ball_overlay(frame, ball_rows.get(frame_number))
             draw_overlay(frame, frame_number, analysis)
             writer.write(frame)
     finally:

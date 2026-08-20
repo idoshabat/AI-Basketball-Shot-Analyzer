@@ -1,0 +1,300 @@
+{
+  "run_id": "2026-08-15_204739_ft4_274f098a",
+  "analysis_version": "rule-based-mvp-2026-08-15",
+  "owner_user_id": "91900100-5e72-471b-9ed7-ca2f923f25b9",
+  "run_dir": "storage/analyses/2026-08-15_204739_ft4_274f098a",
+  "video": "storage/analyses/2026-08-15_204739_ft4_274f098a/input/original.mp4",
+  "score": 61,
+  "shooting_side": "right",
+  "camera_view": "front",
+  "reliability": {
+    "score": 100,
+    "label": "high",
+    "checks": [
+      {
+        "name": "Release detection",
+        "status": "pass",
+        "detail": "Release timing confidence is high."
+      },
+      {
+        "name": "Video length",
+        "status": "pass",
+        "detail": "80 usable pose frames were analyzed."
+      },
+      {
+        "name": "Post-release frames",
+        "status": "pass",
+        "detail": "Enough frames exist after release."
+      },
+      {
+        "name": "Full-body landmarks",
+        "status": "pass",
+        "detail": "Upper body, hips, and ankles are available."
+      },
+      {
+        "name": "Front/back line metrics",
+        "status": "pass",
+        "detail": "Feet, shin, forearm, and follow-through line metrics were measured."
+      },
+      {
+        "name": "Foot landmarks",
+        "status": "pass",
+        "detail": "Heel and toe landmarks were detected for foot direction."
+      }
+    ]
+  },
+  "video_metadata": {
+    "fps": 29.76891876806291,
+    "frame_count": 80,
+    "width": 478,
+    "height": 850
+  },
+  "metrics": {
+    "max_elbow_angle": 179.72634357666607,
+    "min_knee_angle": 136.80041713661308,
+    "elbow_angle_std": 31.300241100872654,
+    "release_frame": 44,
+    "release_detection_method": "height_and_extension",
+    "release_confidence": 0.75,
+    "release_confidence_label": "high",
+    "release_elbow_angle": 169.27045175986933,
+    "release_knee_angle": 165.90493632684812,
+    "release_wrist_y": 0.3351329565048218,
+    "release_wrist_y_velocity": -0.0326200127601623,
+    "follow_through_frames": 1,
+    "follow_through_window": 36,
+    "follow_through_ratio": 0.027777777777777776,
+    "follow_through_end_frame": 46,
+    "follow_through_wrist_drop": 0.0,
+    "follow_through_drop_from_best": 0.0,
+    "follow_through_status": "ended",
+    "follow_through_end_reason": "sustained_posture_loss",
+    "hip_load_frame": 36,
+    "hip_deepest_frame": 36,
+    "knee_load_frame": 36,
+    "dip_load_start_frame": 32,
+    "dip_load_end_frame": 42,
+    "hip_load_y": 0.5250241160392761,
+    "release_hip_y": 0.48911233246326447,
+    "hip_rise": 0.03591178357601166,
+    "load_score": 1.0,
+    "load_detection_method": "combined_hip_depth_and_knee_bend",
+    "ankle_baseline_y": 0.5678061544895172,
+    "min_jump_ankle_y": 0.578755795955658,
+    "ankle_lift": 0.0,
+    "jump_window_start": 39,
+    "jump_window_end": 59,
+    "shoulder_level_delta": 0.0014415383338927668,
+    "body_lean": 0.06462831259284958,
+    "arm_stack_error": 0.46680042924219267,
+    "knee_to_ankle_alignment_error": 0.08441770710548847,
+    "leg_symmetry_error": 0.21851969719940953,
+    "left_shin_angle_to_floor": 67.9684759292556,
+    "right_shin_angle_to_floor": 70.76716066977738,
+    "left_shin_vertical_error": 22.031524070744396,
+    "right_shin_vertical_error": 19.232839330222617,
+    "shin_parallel_error": 2.7986847405217787,
+    "left_foot_angle_to_floor": 39.711540576891196,
+    "right_foot_angle_to_floor": 87.00292277306032,
+    "left_foot_floor_error": 39.711540576891196,
+    "right_foot_floor_error": 87.00292277306032,
+    "foot_parallel_error": 47.291382196169124,
+    "forearm_angle_to_floor": 49.47153340948887,
+    "forearm_vertical_error": 40.52846659051113,
+    "follow_through_line_angle_to_floor": 115.98825880130755,
+    "follow_through_vertical_error": 25.988258801307552,
+    "alignment_status": "measured",
+    "ball_tracking_status": "tracked",
+    "ball_visibility_ratio": 1.0,
+    "ball_close_visibility_ratio": 0.988,
+    "ball_release_frame": 44,
+    "ball_release_frame_delta": 0,
+    "ball_arc_height": 0.0456,
+    "ball_avg_wrist_distance": 0.0646,
+    "ball_detector_backend": "heuristic"
+  },
+  "phases": {
+    "setup": {
+      "start_frame": 1,
+      "end_frame": 31
+    },
+    "dip_load": {
+      "start_frame": 32,
+      "end_frame": 42
+    },
+    "upward_motion": {
+      "start_frame": 43,
+      "end_frame": 43
+    },
+    "release": {
+      "start_frame": 44,
+      "end_frame": 44
+    },
+    "follow_through": {
+      "start_frame": 45,
+      "end_frame": 45
+    },
+    "recovery": {
+      "start_frame": 46,
+      "end_frame": 80
+    }
+  },
+  "feedback": [
+    "Front view selected: grading emphasizes alignment metrics visible from this camera angle.",
+    "Lower-leg alignment is off: the knee-to-foot lines are not parallel and vertical enough.",
+    "Feet are not parallel enough, which can pull the shot line off target.",
+    "Forearm angle is too tilted at release; wrist should finish more directly over the elbow.",
+    "Follow-through line drifts sideways instead of staying straight to the basket.",
+    "Torso and shoulders stay balanced from this angle.",
+    "Release happens with a strong arm extension.",
+    "Follow-through looks short; try holding your shooting hand higher after release.",
+    "Arm motion has some variation."
+  ],
+  "coaching_items": [
+    {
+      "title": "Make both knee-to-foot lines vertical",
+      "severity": "high",
+      "metric": "shin_parallel_error",
+      "value": 2.7986847405217787,
+      "target": "Both shin lines within 18 degrees of vertical and parallel",
+      "why_it_matters": "From the front, the knees should track over the feet so the shot loads straight instead of drifting sideways.",
+      "drill": "Record front-view form shots and keep each knee moving directly over the same-side foot during the dip and release.",
+      "phase": "release",
+      "start_frame": 44,
+      "end_frame": 44,
+      "evidence_frame_file": "coaching_frame_01",
+      "evidence_frame_path": "storage/analyses/2026-08-15_204739_ft4_274f098a/output/coaching_frame_01.jpg",
+      "evidence_frame_number": 44
+    },
+    {
+      "title": "Square the feet to the same line",
+      "severity": "high",
+      "metric": "foot_parallel_error",
+      "value": 47.291382196169124,
+      "target": "24 degrees or lower between left and right foot direction",
+      "why_it_matters": "If the feet point in different directions, the hips and shoulders often rotate away from the shot line.",
+      "drill": "Mark a straight line on the floor and start each rep with both feet parallel to that line.",
+      "phase": "setup",
+      "start_frame": 1,
+      "end_frame": 32,
+      "evidence_frame_file": "coaching_frame_02",
+      "evidence_frame_path": "storage/analyses/2026-08-15_204739_ft4_274f098a/output/coaching_frame_02.jpg",
+      "evidence_frame_number": 1
+    },
+    {
+      "title": "Keep the forearm more vertical at release",
+      "severity": "high",
+      "metric": "forearm_vertical_error",
+      "value": 40.52846659051113,
+      "target": "24 degrees or less away from vertical",
+      "why_it_matters": "From the front, a tilted forearm usually means the wrist is not stacked over the elbow, which can create side spin.",
+      "drill": "Shoot one-hand form shots facing the camera and freeze with the wrist directly above the elbow.",
+      "phase": "release",
+      "start_frame": 44,
+      "end_frame": 44,
+      "evidence_frame_file": "coaching_frame_03",
+      "evidence_frame_path": "storage/analyses/2026-08-15_204739_ft4_274f098a/output/coaching_frame_03.jpg",
+      "evidence_frame_number": 44
+    },
+    {
+      "title": "Finish the follow-through on the shot line",
+      "severity": "high",
+      "metric": "follow_through_vertical_error",
+      "value": 25.988258801307552,
+      "target": "24 degrees or less away from vertical",
+      "why_it_matters": "A sideways follow-through often means the hand is pushing across the ball instead of through the target.",
+      "drill": "Hold the finish and point the fingers straight through the center line after release.",
+      "phase": "follow_through",
+      "start_frame": 45,
+      "end_frame": 45,
+      "evidence_frame_file": "coaching_frame_04",
+      "evidence_frame_path": "storage/analyses/2026-08-15_204739_ft4_274f098a/output/coaching_frame_04.jpg",
+      "evidence_frame_number": 45
+    },
+    {
+      "title": "Hold the follow-through longer",
+      "severity": "high",
+      "metric": "follow_through_frames",
+      "value": 1,
+      "target": "At least 5 frames after release",
+      "why_it_matters": "Dropping the wrist early can disturb touch and make the release less repeatable.",
+      "drill": "Use a hold-your-finish drill: release, freeze the wrist, then count one full second before relaxing.",
+      "phase": "follow_through",
+      "start_frame": 45,
+      "end_frame": 45,
+      "evidence_frame_file": "coaching_frame_05",
+      "evidence_frame_path": "storage/analyses/2026-08-15_204739_ft4_274f098a/output/coaching_frame_05.jpg",
+      "evidence_frame_number": 45
+    },
+    {
+      "title": "Tighten arm motion consistency",
+      "severity": "medium",
+      "metric": "elbow_angle_std",
+      "value": 31.300241100872654,
+      "target": "25 degrees or lower",
+      "why_it_matters": "Less variation in the shooting arm helps the release happen the same way each time.",
+      "drill": "Shoot slow form reps and check that the ball path and elbow finish match on every shot.",
+      "phase": "full_shot",
+      "start_frame": 1,
+      "end_frame": 80,
+      "evidence_frame_file": "coaching_frame_06",
+      "evidence_frame_path": "storage/analyses/2026-08-15_204739_ft4_274f098a/output/coaching_frame_06.jpg",
+      "evidence_frame_number": 1
+    }
+  ],
+  "files": {
+    "original_video": "storage/analyses/2026-08-15_204739_ft4_274f098a/input/original.mp4",
+    "keypoints_csv": "storage/analyses/2026-08-15_204739_ft4_274f098a/data/keypoints.csv",
+    "features_csv": "storage/analyses/2026-08-15_204739_ft4_274f098a/data/features.csv",
+    "angles_chart": "samples/front-ft4/angles.png",
+    "follow_through_debug_chart": "samples/front-ft4/follow_through_debug.png",
+    "pose_video": null,
+    "annotated_video": "samples/front-ft4/annotated.webm",
+    "json_report": "storage/analyses/2026-08-15_204739_ft4_274f098a/report.json",
+    "coaching_frame_01": "samples/front-ft4/coaching_frame_01.jpg",
+    "coaching_frame_02": "samples/front-ft4/coaching_frame_02.jpg",
+    "coaching_frame_03": "samples/front-ft4/coaching_frame_03.jpg",
+    "coaching_frame_04": "samples/front-ft4/coaching_frame_04.jpg",
+    "coaching_frame_05": "samples/front-ft4/coaching_frame_05.jpg",
+    "coaching_frame_06": "samples/front-ft4/coaching_frame_06.jpg"
+  },
+  "sample_id": "front-ft4",
+  "sample_label": "Good Front View - FT4",
+  "sample_description": "Front-view alignment analysis.",
+  "output_urls": {
+    "angles_chart": "/samples/front-ft4/angles.png",
+    "follow_through_debug_chart": "/samples/front-ft4/follow_through_debug.png",
+    "annotated_video": "/samples/front-ft4/annotated.webm",
+    "coaching_frame_01": "/samples/front-ft4/coaching_frame_01.jpg",
+    "coaching_frame_02": "/samples/front-ft4/coaching_frame_02.jpg",
+    "coaching_frame_03": "/samples/front-ft4/coaching_frame_03.jpg",
+    "coaching_frame_04": "/samples/front-ft4/coaching_frame_04.jpg",
+    "coaching_frame_05": "/samples/front-ft4/coaching_frame_05.jpg",
+    "coaching_frame_06": "/samples/front-ft4/coaching_frame_06.jpg"
+  },
+  "ball_tracking": {
+    "status": "tracked",
+    "detected": true,
+    "detected_frames": 80,
+    "close_detected_frames": 79,
+    "total_frames": 80,
+    "visibility_ratio": 1.0,
+    "close_visibility_ratio": 0.988,
+    "ball_release_frame": 44,
+    "pose_release_frame": 44,
+    "release_frame_delta": 0,
+    "post_release_tracked_frames": 37,
+    "arc_height": 0.0456,
+    "avg_wrist_distance": 0.0646,
+    "candidate_source_counts": {
+      "circle": 77,
+      "color": 3
+    },
+    "note": "Beta: ball tracking is informational and does not affect the score yet.",
+    "detector_backend": "heuristic",
+    "requested_backend": "auto",
+    "detector_message": "Using heuristic fallback detector.",
+    "model_path": null,
+    "model_error": null
+  }
+}

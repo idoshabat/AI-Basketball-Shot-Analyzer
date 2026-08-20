@@ -7,6 +7,7 @@ import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SUPPORTED_CAMERA_VIEWS = {"side", "front", "back"}
+SUPPORTED_SHOOTING_SIDE_INPUTS = {"auto", "right", "left"}
 
 
 def resolve_features_path(csv_path: str) -> Path:
@@ -52,14 +53,20 @@ def calculate_shooting_side_score(df: pd.DataFrame, side: str) -> dict:
         0.26 * min(1.0, max_elbow_angle / 180.0)
         + 0.22 * min(1.0, release_elbow_angle / 180.0)
         + 0.18 * min(1.0, wrist_y_range / 0.28)
-        + 0.12 * min(1.0, wrist_x_range / 0.18)
+        + 0.08 * min(1.0, wrist_x_range / 0.18)
         + 0.12 * max(0.0, min(1.0, 1.0 - highest_wrist_y))
-        + 0.06 * min(1.0, wrist_above_shoulder_ratio * 2.0)
-        + 0.04 * min(1.0, high_extended_ratio * 3.0)
+        + 0.08 * min(1.0, wrist_above_shoulder_ratio * 2.0)
+        + 0.06 * min(1.0, high_extended_ratio * 3.0)
+    )
+    extension_evidence = (
+        0.42 * min(1.0, max_elbow_angle / 180.0)
+        + 0.38 * min(1.0, release_elbow_angle / 180.0)
+        + 0.20 * min(1.0, high_extended_ratio * 3.0)
     )
 
     return {
         "score": round(score, 4),
+        "extension_evidence": round(extension_evidence, 4),
         "max_elbow_angle": round(max_elbow_angle, 2),
         "release_elbow_angle": round(release_elbow_angle, 2),
         "wrist_y_range": round(wrist_y_range, 4),
@@ -78,10 +85,21 @@ def get_shooting_side_details(df: pd.DataFrame) -> dict:
     left_value = left_score["score"]
     side = "right" if right_value >= left_value else "left"
     gap = abs(right_value - left_value)
+    detection_method = "primary_motion_score"
+
+    if gap < 0.035:
+        right_extension = right_score.get("extension_evidence", 0.0)
+        left_extension = left_score.get("extension_evidence", 0.0)
+        extension_gap = abs(right_extension - left_extension)
+        if extension_gap >= 0.025:
+            side = "right" if right_extension >= left_extension else "left"
+            detection_method = "release_extension_tiebreaker"
+            gap = max(gap, min(0.075, extension_gap), 0.075)
 
     return {
         "side": side,
         "confidence": round(min(1.0, gap / 0.12), 2),
+        "detection_method": detection_method,
         "right_score": right_value,
         "left_score": left_value,
         "right_signals": right_score,
@@ -91,6 +109,14 @@ def get_shooting_side_details(df: pd.DataFrame) -> dict:
 
 def get_shooting_side(df: pd.DataFrame) -> str:
     return get_shooting_side_details(df)["side"]
+
+
+def normalize_shooting_side(shooting_side: str | None) -> str:
+    side = (shooting_side or "auto").strip().lower()
+    if side not in SUPPORTED_SHOOTING_SIDE_INPUTS:
+        raise ValueError("Unsupported shooting hand. Choose one of: auto, right, left.")
+
+    return side
 
 
 def score_elbow_extension(max_elbow_angle: float) -> tuple[int, str]:
@@ -266,6 +292,40 @@ def average_columns(df: pd.DataFrame, columns: list[str]) -> pd.Series | None:
         return None
 
     return df[existing_columns].mean(axis=1)
+
+
+def measure_body_box(df: pd.DataFrame) -> dict:
+    y_columns = [
+        "nose_y",
+        "left_shoulder_y",
+        "right_shoulder_y",
+        "left_hip_y",
+        "right_hip_y",
+        "left_knee_y",
+        "right_knee_y",
+        "left_ankle_y",
+        "right_ankle_y",
+        "left_heel_y",
+        "right_heel_y",
+        "left_foot_index_y",
+        "right_foot_index_y",
+    ]
+    x_columns = [column.replace("_y", "_x") for column in y_columns]
+    existing_y_columns = [column for column in y_columns if column in df.columns]
+    existing_x_columns = [column for column in x_columns if column in df.columns]
+
+    body_height = None
+    body_width = None
+    if existing_y_columns:
+        body_height = float((df[existing_y_columns].max(axis=1) - df[existing_y_columns].min(axis=1)).median())
+    if existing_x_columns:
+        body_width = float((df[existing_x_columns].max(axis=1) - df[existing_x_columns].min(axis=1)).median())
+
+    return {
+        "median_body_height": body_height,
+        "median_body_width": body_width,
+        "median_body_box_area": None if body_height is None or body_width is None else body_height * body_width,
+    }
 
 
 def normalize_series(series: pd.Series, reverse: bool = False) -> pd.Series:
@@ -1313,6 +1373,42 @@ def calculate_analysis_reliability(df: pd.DataFrame, camera_view: str, metrics: 
         score -= 25
         checks.append(build_reliability_check("Full-body landmarks", "fail", "Some required full-body landmarks are missing."))
 
+    pose_people_count = metrics.get("max_detected_people_count", 0) or 0
+    pose_multi_person_ratio = metrics.get("multi_person_frame_ratio", 0.0) or 0.0
+    scene_people_count = metrics.get("scene_max_people_count", 0) or 0
+    scene_multi_person_ratio = metrics.get("scene_multi_person_frame_ratio", 0.0) or 0.0
+    median_pose_area = metrics.get("median_selected_pose_area", 0.0) or 0.0
+    median_body_height = metrics.get("median_body_height", 0.0) or 0.0
+    video_width = metrics.get("video_width", 0) or 0
+    video_height = metrics.get("video_height", 0) or 0
+    confirmed_multi_pose = pose_people_count >= 2 and pose_multi_person_ratio >= 0.2
+    low_pose_scale = (median_body_height and median_body_height < 0.18) or (median_pose_area and median_pose_area < 0.018)
+    hog_crowd_hint = scene_people_count >= 2 and scene_multi_person_ratio >= 0.5
+    low_resolution = bool(video_width and video_height and min(video_width, video_height) < 400)
+    crowded_scene = hog_crowd_hint and low_pose_scale
+    possible_crowded_scene = hog_crowd_hint and low_resolution and not low_pose_scale
+
+    if confirmed_multi_pose or crowded_scene:
+        score -= 30
+        checks.append(build_reliability_check("Multiple people", "fail", "Multiple people were detected in many frames, so the tracked pose may not be the shooter."))
+    elif possible_crowded_scene:
+        score -= 5
+        checks.append(build_reliability_check("Busy scene", "warning", "The scene detector saw extra human-like shapes, but pose tracking stayed locked on one player."))
+    else:
+        checks.append(build_reliability_check("Single player", "pass", "Only one tracked player was detected."))
+
+    if median_body_height and median_body_height < 0.16:
+        score -= 20
+        checks.append(build_reliability_check("Player size", "fail", "The tracked player does not fill enough vertical space in the frame for stable pose analysis."))
+    elif median_body_height and median_body_height < 0.18:
+        score -= 10
+        checks.append(build_reliability_check("Player size", "warning", "The tracked player is a bit far from the camera."))
+    elif not median_body_height and median_pose_area and median_pose_area < 0.018:
+        score -= 10
+        checks.append(build_reliability_check("Player size", "warning", "The tracked player is a bit far from the camera."))
+    else:
+        checks.append(build_reliability_check("Player size", "pass", "The tracked player is large enough for pose analysis."))
+
     if camera_view in {"front", "back"}:
         if metrics.get("alignment_status") == "measured":
             checks.append(build_reliability_check("Front/back line metrics", "pass", "Feet, shin, forearm, and follow-through line metrics were measured."))
@@ -1344,8 +1440,83 @@ def calculate_analysis_reliability(df: pd.DataFrame, camera_view: str, metrics: 
     }
 
 
-def analyze_shot(features_csv_path: str, camera_view: str = "side") -> dict:
+def cap_score_by_reliability(score: int, reliability: dict) -> int:
+    fail_count = sum(1 for check in reliability.get("checks", []) if check.get("status") == "fail")
+    warning_count = sum(1 for check in reliability.get("checks", []) if check.get("status") == "warning")
+    reliability_score = reliability.get("score", 100)
+
+    score_cap = 100
+    if reliability_score < 45 or fail_count >= 3:
+        score_cap = 45
+    elif reliability_score < 60 or fail_count >= 2:
+        score_cap = 55
+    elif reliability_score < 75 or fail_count >= 1:
+        score_cap = 65
+    elif warning_count >= 2:
+        score_cap = 78
+
+    return min(score, score_cap)
+
+
+def build_quality_warnings(reliability: dict, metrics: dict) -> list[dict]:
+    warnings = []
+
+    for check in reliability.get("checks", []):
+        if check.get("status") == "pass":
+            continue
+
+        severity = "high" if check.get("status") == "fail" else "medium"
+        suggestion = "Record again with one player fully visible, stable camera, good lighting, and a few frames after the release."
+        if check.get("name") == "Release detection":
+            suggestion = "Make sure the video includes the full shooting motion and the wrist is visible around release."
+        elif check.get("name") == "Video length":
+            suggestion = "Use a slightly longer clip that includes setup, release, follow-through, and recovery."
+        elif check.get("name") == "Post-release frames":
+            suggestion = "Keep recording for at least one second after the ball leaves the hand."
+        elif check.get("name") == "Full-body landmarks":
+            suggestion = "Film from far enough away so head, hips, knees, ankles, and shooting arm stay in frame."
+        elif check.get("name") == "Front/back line metrics":
+            suggestion = "For front/back analysis, keep feet, knees, elbow, and wrist clearly visible."
+        elif check.get("name") == "Foot landmarks":
+            suggestion = "Use a full-body view where shoes and toes are visible and not cut off."
+        elif check.get("name") == "Multiple people":
+            suggestion = "Record with only the shooter in frame, or crop the video so other players are not visible."
+        elif check.get("name") == "Busy scene":
+            suggestion = "If the report looks wrong, re-record or crop the video so the shooter is isolated."
+        elif check.get("name") == "Player size":
+            suggestion = "Move the camera closer or crop the video so only the shooter fills more of the frame."
+
+        warnings.append(
+            {
+                "title": check.get("name", "Input quality"),
+                "severity": severity,
+                "detail": check.get("detail", "This may reduce analysis accuracy."),
+                "suggestion": suggestion,
+            }
+        )
+
+    if metrics.get("shooting_side_source") == "auto" and metrics.get("shooting_side_confidence", 1.0) < 0.55:
+        warnings.append(
+            {
+                "title": "Shooting hand confidence",
+                "severity": "medium",
+                "detail": "The shooting hand was auto-detected with low confidence.",
+                "suggestion": "Choose Right or Left manually before analyzing this video again.",
+            }
+        )
+
+    return warnings
+
+
+def analyze_shot(
+    features_csv_path: str,
+    camera_view: str = "side",
+    shooting_side: str = "auto",
+    input_quality: dict | None = None,
+) -> dict:
     camera_view = normalize_camera_view(camera_view)
+    requested_shooting_side = normalize_shooting_side(shooting_side)
+    input_quality = input_quality or {}
     path = resolve_features_path(features_csv_path)
     df = pd.read_csv(path).dropna()
 
@@ -1353,7 +1524,8 @@ def analyze_shot(features_csv_path: str, camera_view: str = "side") -> dict:
         raise ValueError(f"No valid feature rows found in: {path}")
 
     shooting_side_details = get_shooting_side_details(df)
-    shooting_side = shooting_side_details["side"]
+    detected_shooting_side = shooting_side_details["side"]
+    shooting_side = detected_shooting_side if requested_shooting_side == "auto" else requested_shooting_side
     elbow_column = f"{shooting_side}_elbow_angle"
     knee_column = f"{shooting_side}_knee_angle"
 
@@ -1424,16 +1596,33 @@ def analyze_shot(features_csv_path: str, camera_view: str = "side") -> dict:
             consistency_feedback,
         ]
     score = max(0, min(100, round(score)))
+    body_box = measure_body_box(df)
 
     metrics = {
         "max_elbow_angle": max_elbow_angle,
         "min_knee_angle": min_knee_angle,
         "elbow_angle_std": elbow_angle_std,
+        "max_detected_people_count": int(df["detected_people_count"].max()) if "detected_people_count" in df.columns else 1,
+        "avg_detected_people_count": round(float(df["detected_people_count"].mean()), 2) if "detected_people_count" in df.columns else 1.0,
+        "multi_person_frame_ratio": round(float((df["detected_people_count"] >= 2).mean()), 2) if "detected_people_count" in df.columns else 0.0,
+        "scene_max_people_count": input_quality.get("scene_max_people_count"),
+        "scene_multi_person_frame_ratio": input_quality.get("scene_multi_person_frame_ratio"),
+        "scene_sampled_frames": input_quality.get("scene_sampled_frames"),
+        "video_width": input_quality.get("width"),
+        "video_height": input_quality.get("height"),
+        "median_selected_pose_area": round(float(df["selected_pose_area"].median()), 4) if "selected_pose_area" in df.columns else None,
+        "median_body_height": None if body_box["median_body_height"] is None else round(body_box["median_body_height"], 4),
+        "median_body_width": None if body_box["median_body_width"] is None else round(body_box["median_body_width"], 4),
+        "median_body_box_area": None if body_box["median_body_box_area"] is None else round(body_box["median_body_box_area"], 4),
         "release_frame": release_frame,
         "release_detection_method": release_detection_method,
         "release_confidence": release_confidence,
         "release_confidence_label": release_confidence_label,
         "shooting_side_confidence": shooting_side_details["confidence"],
+        "shooting_side_detection_method": shooting_side_details["detection_method"],
+        "shooting_side_source": "auto" if requested_shooting_side == "auto" else "manual",
+        "detected_shooting_side": detected_shooting_side,
+        "requested_shooting_side": requested_shooting_side,
         "right_shooting_side_score": shooting_side_details["right_score"],
         "left_shooting_side_score": shooting_side_details["left_score"],
         "shooting_side_signals": {
@@ -1450,12 +1639,18 @@ def analyze_shot(features_csv_path: str, camera_view: str = "side") -> dict:
         **alignment,
     }
     reliability = calculate_analysis_reliability(df, camera_view, metrics)
+    quality_warnings = build_quality_warnings(reliability, metrics)
+    raw_score = score
+    score = cap_score_by_reliability(score, reliability)
+    if score < raw_score:
+        feedback.insert(0, "Input quality limits confidence, so the score was capped. Re-record with only the shooter clearly visible for a fairer analysis.")
 
     return {
         "score": score,
         "shooting_side": shooting_side,
         "camera_view": camera_view,
         "reliability": reliability,
+        "quality_warnings": quality_warnings,
         "metrics": metrics,
         "phases": phases,
         "feedback": feedback,

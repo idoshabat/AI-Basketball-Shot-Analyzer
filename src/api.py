@@ -36,7 +36,7 @@ GUEST_USER_ID = "guest"
 sys.path.insert(0, str(SRC_DIR))
 
 from analyze_video import ANALYSIS_VERSION, analyze_video, create_analysis_run, format_path
-from shot_analyzer import normalize_camera_view
+from shot_analyzer import normalize_camera_view, normalize_shooting_side
 import supabase_store
 
 
@@ -218,6 +218,7 @@ def build_file_response(result: dict) -> dict:
         "original_video": format_path(result["input_video_path"]),
         "keypoints_csv": format_path(result["keypoints_path"]),
         "features_csv": format_path(result["features_path"]),
+        "ball_tracking_csv": format_path(result["ball_tracking_path"]),
         "angles_chart": format_path(result["chart_path"]),
         "follow_through_debug_chart": format_path(result["follow_through_debug_chart_path"]),
         "pose_video": format_path(result["output_path"]),
@@ -362,6 +363,7 @@ def build_saved_analysis_response(report: dict) -> dict:
             "shooting_side": report.get("shooting_side"),
             "camera_view": report.get("camera_view", "side"),
             "reliability": report.get("reliability"),
+            "quality_warnings": report.get("quality_warnings", []),
             "video_metadata": report.get("video_metadata"),
             "metrics": report.get("metrics", {}),
             "phases": report.get("phases", {}),
@@ -579,8 +581,11 @@ async def analyze_shot_endpoint(
     save_annotated_video: bool = True,
     save_report: bool = True,
     camera_view: str = "side",
+    shooting_side: str = "auto",
     camera_view_form: str | None = Form(default=None, alias="camera_view"),
+    shooting_side_form: str | None = Form(default=None, alias="shooting_side"),
     x_camera_view: str | None = Header(default=None),
+    x_shooting_side: str | None = Header(default=None),
     authorization: str | None = Header(default=None),
 ) -> dict:
     user_id = get_request_user_id(authorization)
@@ -588,6 +593,8 @@ async def analyze_shot_endpoint(
     try:
         camera_view = x_camera_view or camera_view_form or camera_view
         camera_view = normalize_camera_view(camera_view)
+        shooting_side = x_shooting_side or shooting_side_form or shooting_side
+        shooting_side = normalize_shooting_side(shooting_side)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -608,6 +615,7 @@ async def analyze_shot_endpoint(
             save_json_report=save_report,
             display=False,
             camera_view=camera_view,
+            shooting_side=shooting_side,
             owner_user_id=user_id,
         )
     except Exception as exc:
@@ -620,8 +628,10 @@ async def analyze_shot_endpoint(
         "shooting_side": result["analysis"]["shooting_side"],
         "camera_view": result["analysis"]["camera_view"],
         "reliability": result["analysis"]["reliability"],
+        "quality_warnings": result["analysis"].get("quality_warnings", []),
         "video_metadata": result["video_metadata"],
         "metrics": result["analysis"]["metrics"],
+        "ball_tracking": result.get("ball_tracking", {}),
         "phases": result["analysis"]["phases"],
         "feedback": result["analysis"]["feedback"],
         "coaching_items": result["analysis"]["coaching_items"],

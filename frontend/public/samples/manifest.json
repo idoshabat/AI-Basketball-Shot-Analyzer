@@ -1,0 +1,56 @@
+[
+  {
+    "id": "side-ft2",
+    "label": "Good Side View - FT2",
+    "description": "Clean side-view form shot.",
+    "path": "/samples/side-ft2/analysis.json",
+    "score": 84,
+    "camera_view": "side",
+    "quality_warnings": 0
+  },
+  {
+    "id": "side-ft3",
+    "label": "Good Side View - FT3",
+    "description": "Clean side-view shot with strong score.",
+    "path": "/samples/side-ft3/analysis.json",
+    "score": 85,
+    "camera_view": "side",
+    "quality_warnings": 0
+  },
+  {
+    "id": "front-ft4",
+    "label": "Good Front View - FT4",
+    "description": "Front-view alignment analysis.",
+    "path": "/samples/front-ft4/analysis.json",
+    "score": 61,
+    "camera_view": "front",
+    "quality_warnings": 0
+  },
+  {
+    "id": "front-ft5",
+    "label": "Good Front View - FT5",
+    "description": "Clean single-player front-view shot.",
+    "path": "/samples/front-ft5/analysis.json",
+    "score": 84,
+    "camera_view": "front",
+    "quality_warnings": 0
+  },
+  {
+    "id": "back-ft6",
+    "label": "Good Back View - FT6",
+    "description": "Back-view shot with clean reliability.",
+    "path": "/samples/back-ft6/analysis.json",
+    "score": 92,
+    "camera_view": "back",
+    "quality_warnings": 0
+  },
+  {
+    "id": "bad-ft1",
+    "label": "Bad Input - FT1",
+    "description": "Far, crowded video that should trigger quality warnings.",
+    "path": "/samples/bad-ft1/analysis.json",
+    "score": 45,
+    "camera_view": "front",
+    "quality_warnings": 4
+  }
+]

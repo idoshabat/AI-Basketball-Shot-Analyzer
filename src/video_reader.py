@@ -65,6 +65,24 @@ def create_video_writer(cap, output_path: Path):
     raise RuntimeError(f"Could not create video writer for: {output_path}")
 
 
+def create_people_detector():
+    detector = cv2.HOGDescriptor()
+    detector.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
+    return detector
+
+
+def count_people_in_frame(frame, detector) -> int:
+    height, width = frame.shape[:2]
+    if width <= 0:
+        return 0
+
+    target_width = 480
+    scale = target_width / width
+    resized = cv2.resize(frame, (target_width, int(height * scale))) if abs(scale - 1.0) > 0.05 else frame
+    rectangles, _ = detector.detectMultiScale(resized, winStride=(8, 8), padding=(8, 8), scale=1.05)
+    return len(rectangles)
+
+
 def read_video(
     video_path: str,
     show_pose: bool = True,
@@ -91,6 +109,9 @@ def read_video(
     keypoints_path = Path(keypoints_path) if keypoints_path else build_keypoints_path(path)
     writer = create_video_writer(cap, output_path) if save_output else None
     keypoint_rows = []
+    people_detector = create_people_detector()
+    people_sample_interval = max(1, frame_count // 8) if frame_count else 15
+    scene_people_counts = []
 
     try:
         frame_number = 0
@@ -100,6 +121,9 @@ def read_video(
                 break
 
             frame_number += 1
+            if frame_number == 1 or frame_number % people_sample_interval == 0:
+                scene_people_counts.append(count_people_in_frame(frame, people_detector))
+
             pose_result = pose_detector.detect(frame) if pose_detector else None
 
             if save_keypoints and pose_detector:
@@ -140,6 +164,10 @@ def read_video(
         if verbose:
             print(f"Saved keypoints CSV: {keypoints_path}")
 
+    max_scene_people = max(scene_people_counts or [0])
+    multi_person_samples = sum(1 for count in scene_people_counts if count >= 2)
+    multi_person_sample_ratio = multi_person_samples / len(scene_people_counts) if scene_people_counts else 0.0
+
     return {
         "video_path": path,
         "output_path": output_path if save_output else None,
@@ -149,6 +177,9 @@ def read_video(
             "frame_count": frame_count,
             "width": width,
             "height": height,
+            "scene_sampled_frames": len(scene_people_counts),
+            "scene_max_people_count": max_scene_people,
+            "scene_multi_person_frame_ratio": round(multi_person_sample_ratio, 2),
         },
     }
 

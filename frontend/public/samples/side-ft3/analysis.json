@@ -1,0 +1,221 @@
+{
+  "run_id": "2026-08-15_201515_ft3_04512f74",
+  "analysis_version": "rule-based-mvp-2026-08-15",
+  "owner_user_id": "guest",
+  "run_dir": "storage/analyses/2026-08-15_201515_ft3_04512f74",
+  "video": "storage/analyses/2026-08-15_201515_ft3_04512f74/input/original.mp4",
+  "score": 85,
+  "shooting_side": "right",
+  "camera_view": "side",
+  "reliability": {
+    "score": 100,
+    "label": "high",
+    "checks": [
+      {
+        "name": "Release detection",
+        "status": "pass",
+        "detail": "Release timing confidence is high."
+      },
+      {
+        "name": "Video length",
+        "status": "pass",
+        "detail": "240 usable pose frames were analyzed."
+      },
+      {
+        "name": "Post-release frames",
+        "status": "pass",
+        "detail": "Enough frames exist after release."
+      },
+      {
+        "name": "Full-body landmarks",
+        "status": "pass",
+        "detail": "Upper body, hips, and ankles are available."
+      },
+      {
+        "name": "Camera-specific metrics",
+        "status": "pass",
+        "detail": "Side-view biomechanics were used for this analysis."
+      }
+    ]
+  },
+  "video_metadata": {
+    "fps": 24.0,
+    "frame_count": 240,
+    "width": 1280,
+    "height": 720
+  },
+  "metrics": {
+    "max_elbow_angle": 179.82724332832737,
+    "min_knee_angle": 134.22012448266935,
+    "elbow_angle_std": 34.93093800456041,
+    "release_frame": 97,
+    "release_detection_method": "velocity_transition",
+    "release_confidence": 0.97,
+    "release_confidence_label": "high",
+    "release_elbow_angle": 168.6919914569598,
+    "release_knee_angle": 174.2719239417113,
+    "release_wrist_y": 0.2203849256038665,
+    "release_wrist_y_velocity": 0.0014469623565672,
+    "follow_through_frames": 78,
+    "follow_through_window": 143,
+    "follow_through_ratio": 0.5454545454545454,
+    "follow_through_end_frame": 176,
+    "follow_through_wrist_drop": 0.13375356793403628,
+    "follow_through_drop_from_best": 0.13208477099736537,
+    "follow_through_status": "ended",
+    "follow_through_end_reason": "sustained_posture_loss",
+    "hip_load_frame": 77,
+    "hip_deepest_frame": 78,
+    "knee_load_frame": 75,
+    "dip_load_start_frame": 73,
+    "dip_load_end_frame": 83,
+    "hip_load_y": 0.6023030877113342,
+    "release_hip_y": 0.5204947590827942,
+    "hip_rise": 0.08180832862854004,
+    "load_score": 0.9875076070276492,
+    "load_detection_method": "combined_hip_depth_and_knee_bend",
+    "ankle_baseline_y": 0.8086425215005875,
+    "min_jump_ankle_y": 0.7799698710441589,
+    "ankle_lift": 0.028672650456428528,
+    "jump_window_start": 92,
+    "jump_window_end": 112,
+    "ball_tracking_status": "tracked",
+    "ball_visibility_ratio": 1.0,
+    "ball_close_visibility_ratio": 1.0,
+    "ball_release_frame": 97,
+    "ball_release_frame_delta": 0,
+    "ball_arc_height": 0.0233,
+    "ball_avg_wrist_distance": 0.0432,
+    "ball_detector_backend": "heuristic"
+  },
+  "phases": {
+    "setup": {
+      "start_frame": 1,
+      "end_frame": 72
+    },
+    "dip_load": {
+      "start_frame": 73,
+      "end_frame": 83
+    },
+    "upward_motion": {
+      "start_frame": 84,
+      "end_frame": 96
+    },
+    "release": {
+      "start_frame": 97,
+      "end_frame": 97
+    },
+    "follow_through": {
+      "start_frame": 98,
+      "end_frame": 175
+    },
+    "recovery": {
+      "start_frame": 176,
+      "end_frame": 240
+    }
+  },
+  "feedback": [
+    "Good shooting arm extension.",
+    "Knee bend is a bit shallow.",
+    "Arm motion has some variation.",
+    "Release happens with a strong arm extension.",
+    "Good follow-through: shooting hand holds near max height after release.",
+    "Good upward leg drive into the release.",
+    "Small jump lift is visible."
+  ],
+  "coaching_items": [
+    {
+      "title": "Increase jump lift",
+      "severity": "medium",
+      "metric": "ankle_lift",
+      "value": 0.028672650456428528,
+      "target": "0.05 or higher normalized ankle lift",
+      "why_it_matters": "A little more lift can improve rhythm and make the shot easier to repeat from distance.",
+      "drill": "Shoot short rhythm jumpers and focus on leaving the floor smoothly without drifting.",
+      "phase": "jump_window",
+      "start_frame": 92,
+      "end_frame": 112,
+      "evidence_frame_file": "coaching_frame_01",
+      "evidence_frame_path": "storage/analyses/2026-08-15_201515_ft3_04512f74/output/coaching_frame_01.jpg",
+      "evidence_frame_number": 92
+    },
+    {
+      "title": "Get slightly deeper in the load",
+      "severity": "medium",
+      "metric": "min_knee_angle",
+      "value": 134.22012448266935,
+      "target": "130 degrees or lower at the deepest load",
+      "why_it_matters": "A slightly deeper knee load can create power earlier, so the release does not have to do all the work.",
+      "drill": "Use rhythm reps from close range: dip smoothly, keep balance, and rise without pausing.",
+      "phase": "dip_load",
+      "start_frame": 73,
+      "end_frame": 83,
+      "evidence_frame_file": "coaching_frame_02",
+      "evidence_frame_path": "storage/analyses/2026-08-15_201515_ft3_04512f74/output/coaching_frame_02.jpg",
+      "evidence_frame_number": 73
+    },
+    {
+      "title": "Tighten arm motion consistency",
+      "severity": "medium",
+      "metric": "elbow_angle_std",
+      "value": 34.93093800456041,
+      "target": "25 degrees or lower",
+      "why_it_matters": "Less variation in the shooting arm helps the release happen the same way each time.",
+      "drill": "Shoot slow form reps and check that the ball path and elbow finish match on every shot.",
+      "phase": "full_shot",
+      "start_frame": 1,
+      "end_frame": 240,
+      "evidence_frame_file": "coaching_frame_03",
+      "evidence_frame_path": "storage/analyses/2026-08-15_201515_ft3_04512f74/output/coaching_frame_03.jpg",
+      "evidence_frame_number": 1
+    }
+  ],
+  "files": {
+    "original_video": "storage/analyses/2026-08-15_201515_ft3_04512f74/input/original.mp4",
+    "keypoints_csv": "storage/analyses/2026-08-15_201515_ft3_04512f74/data/keypoints.csv",
+    "features_csv": "storage/analyses/2026-08-15_201515_ft3_04512f74/data/features.csv",
+    "angles_chart": "samples/side-ft3/angles.png",
+    "follow_through_debug_chart": "samples/side-ft3/follow_through_debug.png",
+    "pose_video": null,
+    "annotated_video": "samples/side-ft3/annotated.webm",
+    "json_report": "storage/analyses/2026-08-15_201515_ft3_04512f74/report.json",
+    "coaching_frame_01": "samples/side-ft3/coaching_frame_01.jpg",
+    "coaching_frame_02": "samples/side-ft3/coaching_frame_02.jpg",
+    "coaching_frame_03": "samples/side-ft3/coaching_frame_03.jpg"
+  },
+  "sample_id": "side-ft3",
+  "sample_label": "Good Side View - FT3",
+  "sample_description": "Clean side-view shot with strong score.",
+  "output_urls": {
+    "angles_chart": "/samples/side-ft3/angles.png",
+    "follow_through_debug_chart": "/samples/side-ft3/follow_through_debug.png",
+    "annotated_video": "/samples/side-ft3/annotated.webm",
+    "coaching_frame_01": "/samples/side-ft3/coaching_frame_01.jpg",
+    "coaching_frame_02": "/samples/side-ft3/coaching_frame_02.jpg",
+    "coaching_frame_03": "/samples/side-ft3/coaching_frame_03.jpg"
+  },
+  "ball_tracking": {
+    "status": "tracked",
+    "detected": true,
+    "detected_frames": 240,
+    "close_detected_frames": 240,
+    "total_frames": 240,
+    "visibility_ratio": 1.0,
+    "close_visibility_ratio": 1.0,
+    "ball_release_frame": 97,
+    "pose_release_frame": 97,
+    "release_frame_delta": 0,
+    "post_release_tracked_frames": 144,
+    "arc_height": 0.0233,
+    "avg_wrist_distance": 0.0432,
+    "candidate_source_counts": {
+      "circle": 240
+    },
+    "note": "Beta: ball tracking is informational and does not affect the score yet.",
+    "detector_backend": "heuristic",
+    "requested_backend": "auto",
+    "detector_message": "Using heuristic fallback detector.",
+    "model_path": null,
+    "model_error": null
+  }
+}
