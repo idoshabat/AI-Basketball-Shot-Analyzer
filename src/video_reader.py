@@ -186,7 +186,7 @@ def read_video(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Read and display a basketball shot video.")
-    parser.add_argument("video_path", help="Path to the video file, for example videos/ft1.mp4")
+    parser.add_argument("video_path", help="Path to the video file, for example videos/ft10.mp4")
     parser.add_argument("--no-pose", action="store_true", help="Display the original video without pose detection")
     parser.add_argument("--save-output", action="store_true", help="Save the displayed video to the output folder")
     parser.add_argument("--save-keypoints", action="store_true", help="Save pose landmarks to the data folder")

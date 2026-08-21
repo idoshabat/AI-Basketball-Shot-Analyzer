@@ -188,8 +188,8 @@ def annotate_video(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Create an annotated basketball shot video.")
-    parser.add_argument("video_path", help="Path to a video file, for example videos/ft1.mp4")
-    parser.add_argument("features_csv_path", help="Path to a features CSV, for example data/ft1_features.csv")
+    parser.add_argument("video_path", help="Path to a video file, for example videos/ft10.mp4")
+    parser.add_argument("features_csv_path", help="Path to a features CSV, for example data/ft10_features.csv")
     parser.add_argument("--output", help="Optional output video path")
     parser.add_argument("--camera-view", choices=["side", "front", "back"], default="side", help="Camera angle used for view-specific overlays")
     args = parser.parse_args()

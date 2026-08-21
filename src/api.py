@@ -362,6 +362,7 @@ def build_saved_analysis_response(report: dict) -> dict:
             "score": report.get("score"),
             "shooting_side": report.get("shooting_side"),
             "camera_view": report.get("camera_view", "side"),
+            "persistence_status": report.get("persistence_status", "ready"),
             "reliability": report.get("reliability"),
             "quality_warnings": report.get("quality_warnings", []),
             "video_metadata": report.get("video_metadata"),

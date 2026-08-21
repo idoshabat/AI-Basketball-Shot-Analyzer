@@ -231,19 +231,15 @@ def add_signed_output_urls(report: dict) -> dict:
     return hydrated_report
 
 
-def persist_report(report: dict) -> dict:
-    report_to_save = deepcopy(report)
-    report_to_save["storage_bucket"] = get_bucket_name()
-    report_to_save["storage_files"] = build_storage_files(report_to_save)
-
+def upsert_report_row(report: dict) -> None:
     body = {
-        "run_id": report_to_save["run_id"],
-        "owner_user_id": report_to_save.get("owner_user_id", "guest"),
-        "analysis_version": report_to_save.get("analysis_version"),
-        "score": report_to_save.get("score"),
-        "shooting_side": report_to_save.get("shooting_side"),
-        "camera_view": report_to_save.get("camera_view", "side"),
-        "report": report_to_save,
+        "run_id": report["run_id"],
+        "owner_user_id": report.get("owner_user_id", "guest"),
+        "analysis_version": report.get("analysis_version"),
+        "score": report.get("score"),
+        "shooting_side": report.get("shooting_side"),
+        "camera_view": report.get("camera_view", "side"),
+        "report": report,
     }
     table = quote(get_table_name(), safe="")
     request_json(
@@ -253,7 +249,25 @@ def persist_report(report: dict) -> dict:
         {"Prefer": "resolution=merge-duplicates,return=minimal"},
     )
 
+
+def persist_report(report: dict) -> dict:
+    report_to_save = deepcopy(report)
+    report_to_save["storage_bucket"] = get_bucket_name()
+    report_to_save["storage_files"] = {}
+    report_to_save["persistence_status"] = "saving_media"
+    upsert_report_row(report_to_save)
+
+    try:
+        report_to_save["storage_files"] = build_storage_files(report_to_save)
+        report_to_save["persistence_status"] = "ready"
+    except SupabaseStoreError:
+        report_to_save["persistence_status"] = "media_upload_failed"
+        upsert_report_row(report_to_save)
+        raise
+
+    upsert_report_row(report_to_save)
     return add_signed_output_urls(report_to_save)
+
 
 
 def list_reports(owner_user_id: str, limit: int = 20) -> list[dict]:
@@ -291,6 +305,7 @@ def list_report_summaries(owner_user_id: str, limit: int = 20) -> list[dict]:
                 "score": row.get("score") or report.get("score"),
                 "shooting_side": row.get("shooting_side") or report.get("shooting_side"),
                 "camera_view": row.get("camera_view") or report.get("camera_view", "side"),
+                "persistence_status": report.get("persistence_status", "ready"),
                 "video": Path(files.get("original_video", "original.mp4")).name,
             }
         )

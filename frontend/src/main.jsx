@@ -1,161 +1,86 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { isSupabaseConfigured, supabase } from "./supabaseClient";
+import {
+  API_BASE_URL,
+  CAMERA_VIEW_GUIDANCE,
+  SAMPLE_RESULTS,
+  clearAccessMode,
+  readAccessMode,
+  writeAccessMode,
+} from "./lib/appConfig";
+import { groupFeedbackItems } from "./lib/feedback";
+import {
+  formatCoachingValue,
+  formatDelta,
+  formatFrameRange,
+  formatMetric,
+  getRequestErrorMessage,
+  getUserName,
+  resolveOutputUrl,
+  titleCase,
+} from "./lib/formatters";
+import { cacheReport, getReportId, getReportPath, getSampleById, readCachedReport } from "./lib/reportCache";
+import { LoadingPage } from "./pages/LoadingPage";
+import { HistoryPage } from "./pages/HistoryPage";
+import { WelcomePage } from "./pages/WelcomePage";
 import "./styles.css";
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.PROD ? "https://ai-basketball-shot-analyzer.onrender.com" : "http://127.0.0.1:8000");
-
-const CAMERA_VIEW_GUIDANCE = {
-  side: {
-    title: "Side view",
-    description: "Best for release timing, elbow extension, knee bend, leg drive, jump lift, and follow-through hold.",
-  },
-  front: {
-    title: "Front view",
-    description: "Best for feet parallelism, knee-to-foot lines, forearm verticality, follow-through direction, and body lean.",
-  },
-  back: {
-    title: "Back view",
-    description: "Best for shoulder/hip alignment, arm path, follow-through direction, stance symmetry, and body lean.",
-  },
-};
-
-const ACCESS_MODE_STORAGE_KEY = "shotAnalyzerAccessMode";
-
-const SAMPLE_RESULTS = [
-  {
-    id: "side-ft2",
-    label: "Good Side View - FT2",
-    description: "Clean side-view form shot.",
-    path: "/samples/side-ft2/analysis.json",
-  },
-  {
-    id: "side-ft3",
-    label: "Good Side View - FT3",
-    description: "Clean side-view shot with strong score.",
-    path: "/samples/side-ft3/analysis.json",
-  },
-  {
-    id: "front-ft4",
-    label: "Good Front View - FT4",
-    description: "Front-view alignment analysis.",
-    path: "/samples/front-ft4/analysis.json",
-  },
-  {
-    id: "front-ft5",
-    label: "Good Front View - FT5",
-    description: "Clean single-player front-view shot.",
-    path: "/samples/front-ft5/analysis.json",
-  },
-  {
-    id: "back-ft6",
-    label: "Good Back View - FT6",
-    description: "Back-view shot with clean reliability.",
-    path: "/samples/back-ft6/analysis.json",
-  },
-  {
-    id: "bad-ft1",
-    label: "Bad Input - FT1",
-    description: "Far, crowded video that should trigger quality warnings.",
-    path: "/samples/bad-ft1/analysis.json",
-  },
-];
-
-function formatMetric(value, digits = 2) {
-  if (value === null || value === undefined) {
-    return "N/A";
+function parseRoute(pathname = globalThis.window?.location?.pathname || "/welcome") {
+  const normalizedPath = pathname === "/" ? "/welcome" : pathname;
+  const analysisMatch = normalizedPath.match(/^\/analysis\/([^/]+)$/);
+  if (analysisMatch) {
+    return { page: "report", analysisId: decodeURIComponent(analysisMatch[1]) };
   }
 
-  if (typeof value === "number") {
-    return Number.isInteger(value) ? value.toString() : value.toFixed(digits);
+  if (normalizedPath === "/history") {
+    return { page: "history", analysisId: null };
   }
 
-  return String(value);
+  if (normalizedPath === "/loading") {
+    return { page: "loading", analysisId: null };
+  }
+
+  if (normalizedPath === "/upload") {
+    return { page: "capture", analysisId: null };
+  }
+
+  return { page: "welcome", analysisId: null };
 }
 
-function titleCase(value) {
-  return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function formatCoachingValue(value) {
-  if (value === null || value === undefined) {
-    return "N/A";
+class AppErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
   }
 
-  return typeof value === "number" ? formatMetric(value) : String(value);
-}
-
-function formatFrameRange(item) {
-  if (item.start_frame === null || item.start_frame === undefined) {
-    return "N/A";
+  static getDerivedStateFromError(error) {
+    return { error };
   }
 
-  if (item.end_frame === null || item.end_frame === undefined || item.end_frame === item.start_frame) {
-    return `Frame ${item.start_frame}`;
+  componentDidCatch(error) {
+    console.error("App render failed", error);
   }
 
-  return `Frames ${item.start_frame}-${item.end_frame}`;
-}
+  render() {
+    if (this.state.error) {
+      return (
+        <main className="app-shell">
+          <section className="workspace">
+            <section className="welcome-panel">
+              <div className="welcome-copy">
+                <p className="eyebrow">AI Basketball Shot Analyzer</p>
+                <h1>The app hit a startup error.</h1>
+                <p>{this.state.error.message || "Refresh the page and try again."}</p>
+              </div>
+            </section>
+          </section>
+        </main>
+      );
+    }
 
-function formatRunDate(value) {
-  if (!value) {
-    return "Unknown time";
+    return this.props.children;
   }
-
-  return value;
-}
-
-function formatDelta(value) {
-  if (value === null || value === undefined) {
-    return "N/A";
-  }
-
-  if (typeof value !== "number") {
-    return String(value);
-  }
-
-  const formatted = Number.isInteger(value) ? value.toString() : value.toFixed(2);
-  return value > 0 ? `+${formatted}` : formatted;
-}
-
-function resolveOutputUrl(path) {
-  if (!path) {
-    return null;
-  }
-
-  if (path.startsWith("http://") || path.startsWith("https://") || path.startsWith("/samples/")) {
-    return path;
-  }
-
-  if (path.startsWith("/storage/v1/") && import.meta.env.VITE_SUPABASE_URL) {
-    return `${import.meta.env.VITE_SUPABASE_URL.replace(/\/$/, "")}${path}`;
-  }
-
-  if (path.startsWith("/object/sign/") && import.meta.env.VITE_SUPABASE_URL) {
-    return `${import.meta.env.VITE_SUPABASE_URL.replace(/\/$/, "")}/storage/v1${path}`;
-  }
-
-  return `${API_BASE_URL}${path}`;
-}
-
-function getRequestErrorMessage(error) {
-  if (error instanceof TypeError && error.message === "Failed to fetch") {
-    return `Could not reach the backend at ${API_BASE_URL}. Check Render status, VITE_API_BASE_URL, and CORS_ORIGINS/CORS_ORIGIN_REGEX.`;
-  }
-
-  return error.message;
-}
-
-function getUserName(session) {
-  return session?.user?.user_metadata?.full_name || session?.user?.email || "Signed-in player";
-}
-
-function formatElapsedTime(totalSeconds) {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
 function App() {
@@ -178,15 +103,16 @@ function App() {
   const [isDeletingAllHistory, setIsDeletingAllHistory] = useState(false);
   const [isComparing, setIsComparing] = useState(false);
   const [isComparingBest, setIsComparingBest] = useState(false);
+  const [isRestoringReport, setIsRestoringReport] = useState(false);
   const [session, setSession] = useState(null);
   const [isAuthReady, setIsAuthReady] = useState(!isSupabaseConfigured);
   const [isSigningIn, setIsSigningIn] = useState(false);
-  const [workspaceView, setWorkspaceView] = useState("capture");
+  const [route, setRoute] = useState(() => parseRoute());
   const [hasEnteredApp, setHasEnteredApp] = useState(() => {
-    return window.localStorage.getItem(ACCESS_MODE_STORAGE_KEY) === "guest";
+    return readAccessMode() === "guest";
   });
   const [isGuestMode, setIsGuestMode] = useState(() => {
-    return window.localStorage.getItem(ACCESS_MODE_STORAGE_KEY) === "guest";
+    return readAccessMode() === "guest";
   });
   const [selectedEvidenceItem, setSelectedEvidenceItem] = useState(null);
   const [deletePrompt, setDeletePrompt] = useState(null);
@@ -194,8 +120,11 @@ function App() {
   const annotatedVideoRef = useRef(null);
   const annotatedVideoSectionRef = useRef(null);
   const resultsSectionRef = useRef(null);
+  const authUserIdRef = useRef(null);
+  const pendingHistoryRef = useRef([]);
 
-  const appView = isAnalyzing ? "analyzing" : result ? "report" : workspaceView;
+  const appView = isAnalyzing ? "analyzing" : route.page;
+  const canUseApp = hasEnteredApp || Boolean(session);
   const chartUrl = resolveOutputUrl(result?.output_urls?.angles_chart);
   const followThroughDebugChartUrl = resolveOutputUrl(result?.output_urls?.follow_through_debug_chart);
   const annotatedVideoUrl = resolveOutputUrl(result?.output_urls?.annotated_video);
@@ -216,6 +145,15 @@ function App() {
         note: "Beta: ball tracking is informational and does not affect the score yet.",
       }
     : null;
+  const feedbackGroups = useMemo(() => groupFeedbackItems(result?.feedback || []), [result?.feedback]);
+
+  function navigate(path, options = {}) {
+    const nextRoute = parseRoute(path);
+    if (window.location.pathname !== path) {
+      window.history[options.replace ? "replaceState" : "pushState"]({}, "", path);
+    }
+    setRoute(nextRoute);
+  }
 
   function showActionToast(title, detail = "", tone = "info") {
     setActionToast({
@@ -224,6 +162,44 @@ function App() {
       detail,
       tone,
     });
+  }
+
+  function setPendingHistory(nextPending) {
+    pendingHistoryRef.current = nextPending;
+  }
+
+  function mergeHistoryWithPending(serverHistory, pendingHistory = pendingHistoryRef.current) {
+    const normalizedServerHistory = serverHistory.map((analysis) => ({
+      ...analysis,
+      is_pending: analysis.persistence_status === "saving_media",
+      created_at: analysis.persistence_status === "saving_media" ? "Saving media..." : analysis.created_at,
+    }));
+    const readyServerRunIds = new Set(
+      normalizedServerHistory
+        .filter((analysis) => analysis.persistence_status !== "saving_media")
+        .map((analysis) => analysis.run_id)
+    );
+    const activePending = pendingHistory.filter((analysis) => {
+      const isConfirmed = readyServerRunIds.has(analysis.run_id);
+      const isExpired = Date.now() - analysis.pending_started_at > 180000;
+      return !isConfirmed && !isExpired;
+    });
+    const activePendingRunIds = new Set(activePending.map((analysis) => analysis.run_id));
+    const visibleServerHistory = normalizedServerHistory.filter((analysis) => !activePendingRunIds.has(analysis.run_id));
+
+    if (activePending.length !== pendingHistoryRef.current.length) {
+      setPendingHistory(activePending);
+    }
+
+    return [...activePending, ...visibleServerHistory].slice(0, 10);
+  }
+
+  function setActiveReport(report, options = {}) {
+    setResult(report);
+    cacheReport(report);
+    if (options.navigate !== false) {
+      navigate(getReportPath(report), { replace: options.replace });
+    }
   }
 
   const coreMetrics = useMemo(() => {
@@ -329,6 +305,7 @@ function App() {
   async function loadAnalysisHistory() {
     if (!hasEnteredApp) {
       setAnalysisHistory([]);
+      setPendingHistory([]);
       return;
     }
 
@@ -343,7 +320,7 @@ function App() {
         throw new Error(data.detail || "Could not load recent analyses.");
       }
 
-      setAnalysisHistory(data);
+      setAnalysisHistory(mergeHistoryWithPending(data));
       showActionToast("Library updated", `${data.length} saved ${data.length === 1 ? "shot" : "shots"} ready.`, "success");
     } catch (historyError) {
       setError(getRequestErrorMessage(historyError));
@@ -366,7 +343,7 @@ function App() {
         throw new Error(data.detail || "Could not open saved analysis.");
       }
 
-      setResult(data);
+      setActiveReport(data);
       setSelectedEvidenceItem(null);
       showActionToast("Report opened", "Jumping to the analysis details.", "success");
       window.setTimeout(() => {
@@ -468,11 +445,13 @@ function App() {
       if (result?.run_id === analysis.run_id) {
         setResult(null);
         setSelectedEvidenceItem(null);
+        navigate("/upload", { replace: true });
       }
       setSelectedComparisonRuns((currentRuns) => currentRuns.filter((runId) => runId !== analysis.run_id));
       if (comparison?.first?.run_id === analysis.run_id || comparison?.second?.run_id === analysis.run_id) {
         setComparison(null);
       }
+      setPendingHistory(pendingHistoryRef.current.filter((item) => item.run_id !== analysis.run_id));
       showActionToast("Analysis deleted", "The report was removed from your library.", "success");
       loadAnalysisHistory();
     } catch (deleteError) {
@@ -514,10 +493,12 @@ function App() {
       }
 
       setAnalysisHistory([]);
+      setPendingHistory([]);
       setSelectedComparisonRuns([]);
       setComparison(null);
       setResult(null);
       setSelectedEvidenceItem(null);
+      navigate("/upload", { replace: true });
       showActionToast("Library cleared", "All recent analyses were deleted.", "success");
     } catch (deleteError) {
       setError(getRequestErrorMessage(deleteError));
@@ -555,33 +536,124 @@ function App() {
   }
 
   useEffect(() => {
+    const handlePopState = () => {
+      setRoute(parseRoute());
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthReady) {
+      return;
+    }
+
+    if (!hasEnteredApp && route.page !== "welcome") {
+      navigate("/welcome", { replace: true });
+      return;
+    }
+
+    if (hasEnteredApp && route.page === "welcome") {
+      navigate("/upload", { replace: true });
+      return;
+    }
+
+    if (hasEnteredApp && route.page === "loading" && !isAnalyzing) {
+      navigate("/upload", { replace: true });
+    }
+  }, [isAuthReady, hasEnteredApp, route.page, isAnalyzing]);
+
+  useEffect(() => {
+    if (!isAuthReady || !hasEnteredApp || route.page !== "report" || !route.analysisId) {
+      return undefined;
+    }
+
+    if (getReportId(result) === route.analysisId) {
+      return undefined;
+    }
+
+    const abortController = new AbortController();
+
+    async function restoreRouteReport() {
+      setIsRestoringReport(true);
+      setError("");
+      try {
+        const cachedReport = readCachedReport(route.analysisId);
+        if (cachedReport) {
+          setResult(cachedReport);
+          return;
+        }
+
+        const sample = getSampleById(route.analysisId);
+        const response = await fetch(sample ? sample.path : `${API_BASE_URL}/analyses/${route.analysisId}`, {
+          headers: sample ? {} : authHeaders,
+          signal: abortController.signal,
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.detail || "Could not restore this report.");
+        }
+
+        setResult(data);
+        cacheReport(data);
+      } catch (restoreError) {
+        if (restoreError.name === "AbortError") {
+          return;
+        }
+
+        setError(getRequestErrorMessage(restoreError));
+        showActionToast("Report restore failed", "Returning to the upload page.", "danger");
+        navigate("/upload", { replace: true });
+      } finally {
+        if (!abortController.signal.aborted) {
+          setIsRestoringReport(false);
+        }
+      }
+    }
+
+    restoreRouteReport();
+    return () => abortController.abort();
+  }, [isAuthReady, hasEnteredApp, route.page, route.analysisId, session?.access_token]);
+
+  useEffect(() => {
     if (!supabase) {
       return;
     }
 
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
+      authUserIdRef.current = data.session?.user?.id || null;
       if (data.session) {
         setHasEnteredApp(true);
         setIsGuestMode(false);
-        window.localStorage.setItem(ACCESS_MODE_STORAGE_KEY, "signed_in");
+        writeAccessMode("signed_in");
       }
       setIsAuthReady(true);
     });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      const previousUserId = authUserIdRef.current;
+      const nextUserId = nextSession?.user?.id || null;
+      const userChanged = Boolean(previousUserId && nextUserId && previousUserId !== nextUserId);
+      const shouldClearWorkspace = event === "SIGNED_OUT" || userChanged;
+
       setSession(nextSession);
       if (nextSession) {
         setHasEnteredApp(true);
         setIsGuestMode(false);
-        window.localStorage.setItem(ACCESS_MODE_STORAGE_KEY, "signed_in");
+        writeAccessMode("signed_in");
       }
-      setSelectedComparisonRuns([]);
-      setComparison(null);
-      setResult(null);
-      setSelectedEvidenceItem(null);
+      if (shouldClearWorkspace) {
+        setSelectedComparisonRuns([]);
+        setComparison(null);
+        setResult(null);
+        setSelectedEvidenceItem(null);
+        setPendingHistory([]);
+      }
+      authUserIdRef.current = nextUserId;
     });
 
     return () => subscription.unsubscribe();
@@ -630,7 +702,7 @@ function App() {
     const { error: signInError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: window.location.origin,
+        redirectTo: `${window.location.origin}/upload`,
       },
     });
 
@@ -651,14 +723,16 @@ function App() {
     showActionToast("Signed out", "Your local workspace is back to the welcome screen.", "success");
     setHasEnteredApp(false);
     setIsGuestMode(false);
-    window.localStorage.removeItem(ACCESS_MODE_STORAGE_KEY);
+    clearAccessMode();
+    navigate("/welcome", { replace: true });
   }
 
   function continueAsGuest() {
     setError("");
     setHasEnteredApp(true);
     setIsGuestMode(true);
-    window.localStorage.setItem(ACCESS_MODE_STORAGE_KEY, "guest");
+    writeAccessMode("guest");
+    navigate("/upload", { replace: true });
     showActionToast("Guest mode started", "You can analyze a shot without signing in.", "success");
   }
 
@@ -667,14 +741,14 @@ function App() {
     setComparison(null);
     setSelectedEvidenceItem(null);
     setError("");
-    setWorkspaceView("capture");
+    navigate("/upload");
     showActionToast("New analysis", "Upload area is ready.");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function openHistoryView() {
     setError("");
-    setWorkspaceView("history");
+    navigate("/history");
     showActionToast("Shot library", "Opening your recent analyses.");
     loadAnalysisHistory();
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -682,7 +756,7 @@ function App() {
 
   function openCaptureView() {
     setError("");
-    setWorkspaceView("capture");
+    navigate("/upload");
     showActionToast("Capture page", "Ready for another video.");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -705,6 +779,7 @@ function App() {
     const selectedShootingSide = event.currentTarget.elements.shooting_side?.value || shootingSide;
     setAnalysisElapsedSeconds(0);
     setIsAnalyzing(true);
+    navigate("/loading");
     setError("");
     setResult(null);
     setSelectedEvidenceItem(null);
@@ -755,27 +830,38 @@ function App() {
         throw new Error(`Shooting hand mismatch: selected ${selectedShootingSide}, backend analyzed ${data.shooting_side}.`);
       }
 
-      setResult(data);
+      setActiveReport(data);
       setSelectedEvidenceItem(null);
       showActionToast("Analysis complete", `Shot score ${data.score}. Report is ready.`, "success");
+      const optimisticSummary = {
+        run_id: data.run_id,
+        created_at: data.persistence === "supabase_pending" ? "Saving to cloud..." : "Saving...",
+        score: data.score,
+        shooting_side: data.shooting_side,
+        camera_view: data.camera_view,
+        video: file.name,
+        pending_started_at: Date.now(),
+        is_pending: data.persistence === "supabase_pending",
+      };
+      if (data.persistence === "supabase_pending") {
+        setPendingHistory([
+          optimisticSummary,
+          ...pendingHistoryRef.current.filter((analysis) => analysis.run_id !== data.run_id),
+        ].slice(0, 10));
+      }
       setAnalysisHistory((currentHistory) => {
-        const optimisticSummary = {
-          run_id: data.run_id,
-          created_at: "Saving...",
-          score: data.score,
-          shooting_side: data.shooting_side,
-          camera_view: data.camera_view,
-          video: file.name,
-        };
         return [optimisticSummary, ...currentHistory.filter((analysis) => analysis.run_id !== data.run_id)].slice(0, 10);
       });
       if (data.persistence === "supabase_pending") {
-        window.setTimeout(loadAnalysisHistory, 2500);
+        [2500, 7000, 15000, 30000].forEach((delay) => {
+          window.setTimeout(loadAnalysisHistory, delay);
+        });
       } else {
         loadAnalysisHistory();
       }
     } catch (requestError) {
       setError(getRequestErrorMessage(requestError));
+      navigate("/upload", { replace: true });
       showActionToast("Analysis failed", getRequestErrorMessage(requestError), "danger");
     } finally {
       setIsAnalyzing(false);
@@ -794,7 +880,7 @@ function App() {
         throw new Error("Could not load sample analysis.");
       }
 
-      setResult(data);
+      setActiveReport(data);
       setSelectedEvidenceItem(null);
       showActionToast("Demo loaded", "Sample report is ready.", "success");
       window.setTimeout(() => {
@@ -822,40 +908,14 @@ function App() {
         </div>
       )}
       <section className="workspace">
-        {isAuthReady && !hasEnteredApp && !session ? (
-          <section className="welcome-panel">
-            <div className="welcome-copy">
-              <p className="eyebrow">AI Basketball Shot Analyzer</p>
-              <h1>Train your jumper with motion data.</h1>
-              <p>
-                Upload a shot, choose the camera angle, and get a clean report with score, priorities, charts, and an
-                annotated video.
-              </p>
-              <div className="welcome-highlights">
-                <span>Pose tracking</span>
-                <span>Camera-aware feedback</span>
-                <span>Saved comparisons</span>
-              </div>
-            </div>
-
-            <div className="welcome-actions">
-              <div>
-                <strong>Start analyzing</strong>
-                <span>Sign in to keep your shot history, or try the app as a guest.</span>
-              </div>
-              <button type="button" onClick={signInWithGoogle} disabled={!isSupabaseConfigured || isSigningIn}>
-                {isSigningIn && <span className="button-spinner small" aria-hidden="true" />}
-                <span>{isSigningIn ? "Opening Google..." : "Sign in with Google"}</span>
-              </button>
-              <button className="sample-button" type="button" onClick={continueAsGuest}>
-                Continue as guest
-              </button>
-              {!isSupabaseConfigured && (
-                <p className="processing-note">Google sign-in needs Supabase env vars. Guest mode is available now.</p>
-              )}
-              {error && <p className="error-text">{error}</p>}
-            </div>
-          </section>
+        {!canUseApp ? (
+          <WelcomePage
+            error={error}
+            isSigningIn={isSigningIn}
+            isSupabaseConfigured={isSupabaseConfigured}
+            onContinueAsGuest={continueAsGuest}
+            onSignInWithGoogle={signInWithGoogle}
+          />
         ) : (
           <div className={`app-stage ${appView}`}>
         {appView !== "analyzing" && (
@@ -911,103 +971,111 @@ function App() {
           </nav>
         )}
         {appView === "capture" && (
-        <div className="upload-panel stage-card">
-          <div className="capture-copy">
-            <p className="eyebrow">AI Basketball Shot Analyzer</p>
-            <h1>Upload a shot and get a motion report.</h1>
-            <div className="capture-hints" aria-label="Recording tips">
-              <span>One shooter</span>
-              <span>Full body visible</span>
-              <span>Steady camera</span>
+          <div className="upload-panel stage-card">
+            <div className="capture-copy">
+              <p className="eyebrow">AI Basketball Shot Analyzer</p>
+              <h1>Upload a shot and get a motion report.</h1>
+              <div className="capture-hints" aria-label="Recording tips">
+                <span>One shooter</span>
+                <span>Full body visible</span>
+                <span>Steady camera</span>
+              </div>
+              <div className="sample-picker">
+                <label>
+                  <span>Demo sample</span>
+                  <select value={selectedSampleId} onChange={(event) => setSelectedSampleId(event.target.value)}>
+                    {SAMPLE_RESULTS.map((sample) => (
+                      <option value={sample.id} key={sample.id}>
+                        {sample.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p>{selectedSample.description}</p>
+                <button className="sample-button" type="button" onClick={loadSampleResult} disabled={isLoadingSample}>
+                  {isLoadingSample && <span className="button-spinner small" aria-hidden="true" />}
+                  <span>{isLoadingSample ? "Loading demo..." : "Load Demo"}</span>
+                </button>
+              </div>
             </div>
-            <div className="sample-picker">
-              <label>
-                <span>Demo sample</span>
-                <select value={selectedSampleId} onChange={(event) => setSelectedSampleId(event.target.value)}>
-                  {SAMPLE_RESULTS.map((sample) => (
-                    <option value={sample.id} key={sample.id}>
-                      {sample.label}
-                    </option>
-                  ))}
+
+            <form onSubmit={analyzeShot} className="upload-form">
+              <div className="form-section-title">
+                <strong>New analysis</strong>
+                <span>Choose the video and how it was filmed.</span>
+              </div>
+              <label className="file-input">
+                <span>{file ? file.name : "Choose video file"}</span>
+                <input
+                  type="file"
+                  accept="video/mp4,video/quicktime,video/x-msvideo,video/x-matroska"
+                  onChange={(event) => setFile(event.target.files?.[0] || null)}
+                />
+              </label>
+
+              <label className="toggle-row">
+                <span>Camera view</span>
+                <select name="camera_view" value={cameraView} onChange={(event) => setCameraView(event.target.value)}>
+                  <option value="side">Side</option>
+                  <option value="front">Front</option>
+                  <option value="back">Back</option>
                 </select>
               </label>
-              <p>{selectedSample.description}</p>
-              <button className="sample-button" type="button" onClick={loadSampleResult} disabled={isLoadingSample}>
-                {isLoadingSample && <span className="button-spinner small" aria-hidden="true" />}
-                <span>{isLoadingSample ? "Loading demo..." : "Load Demo"}</span>
+
+              <div className="camera-guidance">
+                <strong>{CAMERA_VIEW_GUIDANCE[cameraView].title}</strong>
+                <p>{CAMERA_VIEW_GUIDANCE[cameraView].description}</p>
+                <span>Compare shots only when they were filmed from the same camera angle.</span>
+              </div>
+
+              <label className="toggle-row">
+                <span>Shooting hand</span>
+                <select name="shooting_side" value={shootingSide} onChange={(event) => setShootingSide(event.target.value)}>
+                  <option value="auto">Auto detect</option>
+                  <option value="right">Right</option>
+                  <option value="left">Left</option>
+                </select>
+              </label>
+
+              <div className="capture-guidance">
+                <strong>For the best result</strong>
+                <p>
+                  Film one player only, keep the full body visible, use good lighting and video quality, and keep the camera
+                  steady from the selected angle.
+                </p>
+              </div>
+
+              <label className="toggle-row">
+                <input
+                  type="checkbox"
+                  checked={includeAnnotatedVideo}
+                  onChange={(event) => setIncludeAnnotatedVideo(event.target.checked)}
+                />
+                <span>Generate annotated video</span>
+              </label>
+
+              <button type="submit" disabled={isAnalyzing}>
+                {isAnalyzing && <span className="button-spinner" aria-hidden="true" />}
+                <span>{isAnalyzing ? "Analyzing shot..." : "Analyze Shot"}</span>
               </button>
-            </div>
-          </div>
-
-          <form onSubmit={analyzeShot} className="upload-form">
-            <div className="form-section-title">
-              <strong>New analysis</strong>
-              <span>Choose the video and how it was filmed.</span>
-            </div>
-            <label className="file-input">
-              <span>{file ? file.name : "Choose video file"}</span>
-              <input
-                type="file"
-                accept="video/mp4,video/quicktime,video/x-msvideo,video/x-matroska"
-                onChange={(event) => setFile(event.target.files?.[0] || null)}
-              />
-            </label>
-
-            <label className="toggle-row">
-              <span>Camera view</span>
-              <select name="camera_view" value={cameraView} onChange={(event) => setCameraView(event.target.value)}>
-                <option value="side">Side</option>
-                <option value="front">Front</option>
-                <option value="back">Back</option>
-              </select>
-            </label>
-
-            <div className="camera-guidance">
-              <strong>{CAMERA_VIEW_GUIDANCE[cameraView].title}</strong>
-              <p>{CAMERA_VIEW_GUIDANCE[cameraView].description}</p>
-              <span>Compare shots only when they were filmed from the same camera angle.</span>
-            </div>
-
-            <label className="toggle-row">
-              <span>Shooting hand</span>
-              <select name="shooting_side" value={shootingSide} onChange={(event) => setShootingSide(event.target.value)}>
-                <option value="auto">Auto detect</option>
-                <option value="right">Right</option>
-                <option value="left">Left</option>
-              </select>
-            </label>
-
-            <div className="capture-guidance">
-              <strong>For the best result</strong>
-              <p>
-                Film one player only, keep the full body visible, use good lighting and video quality, and keep the camera
-                steady from the selected angle.
+              <p className="processing-note">
+                Analysis can take a few minutes on the hosted backend, especially when annotated video is enabled.
               </p>
-            </div>
+            </form>
 
-            <label className="toggle-row">
-              <input
-                type="checkbox"
-                checked={includeAnnotatedVideo}
-                onChange={(event) => setIncludeAnnotatedVideo(event.target.checked)}
-              />
-              <span>Generate annotated video</span>
-            </label>
-
-            <button type="submit" disabled={isAnalyzing}>
-              {isAnalyzing && <span className="button-spinner" aria-hidden="true" />}
-              <span>{isAnalyzing ? "Analyzing shot..." : "Analyze Shot"}</span>
-            </button>
-            <p className="processing-note">
-              Analysis can take a few minutes on the hosted backend, especially when annotated video is enabled.
-            </p>
-          </form>
-
-          {error && <p className="error-text">{error}</p>}
-        </div>
+            {error && <p className="error-text">{error}</p>}
+          </div>
         )}
 
         {appView === "analyzing" && (
+          <LoadingPage
+            analysisElapsedSeconds={analysisElapsedSeconds}
+            cameraView={cameraView}
+            shootingSide={shootingSide}
+          />
+        )}
+
+        {appView === "report" && isRestoringReport && !result && (
           <section className="analysis-loading-screen" aria-live="polite">
             <div className="loading-orbit" aria-hidden="true">
               <span />
@@ -1015,33 +1083,25 @@ function App() {
               <span />
             </div>
             <div className="loading-copy">
-              <p className="eyebrow">Shot analysis in progress</p>
-              <h1>Reading body motion frame by frame.</h1>
-              <p>
-                Pose tracking, phase detection, scoring, coaching frames, charts, and optional annotated video are being
-                generated. Hosted analysis can take a few minutes on Render's low-CPU instance.
-              </p>
+              <p className="eyebrow">Opening report</p>
+              <h1>Restoring your shot analysis.</h1>
+              <p>Loading the saved report, evidence frames, charts, and annotated video links.</p>
             </div>
             <div className="loading-dashboard">
-              <div className="elapsed-timer large" aria-live="polite">
-                <span>Running time</span>
-                <strong>{formatElapsedTime(analysisElapsedSeconds)}</strong>
-              </div>
               <div className="loading-steps" aria-hidden="true">
-                <span>Upload locked</span>
-                <span>Pose map</span>
-                <span>Release scan</span>
-                <span>Report render</span>
+                <span>Report lookup</span>
+                <span>Media links</span>
+                <span>Metrics</span>
+                <span>Ready</span>
               </div>
               <div className="loading-bar" aria-hidden="true">
                 <span />
               </div>
-              <p>Camera view: {titleCase(cameraView)}. Shooting hand: {titleCase(shootingSide)}.</p>
             </div>
           </section>
         )}
 
-        {appView === "report" && (
+        {appView === "report" && result && (
           <section className="report-hero">
             <div>
               <p className="eyebrow">Analysis complete</p>
@@ -1057,132 +1117,23 @@ function App() {
         )}
 
         {appView === "history" && (
-        <section className="history-panel history-screen stage-card">
-          <div className="history-hero">
-            <div>
-              <p className="eyebrow dark">Shot library</p>
-              <h2>Recent Analyses</h2>
-              <p className="subtle">Open saved reports, compare progress, or clear old test runs from this account.</p>
-            </div>
-            <div className="history-summary">
-              <span>Saved shots</span>
-              <strong>{analysisHistory.length}</strong>
-            </div>
-          </div>
-
-          <div className="history-toolbar">
-            <div>
-              <span>{selectedComparisonRuns.length}/2 selected for comparison</span>
-              <strong>{isGuestMode ? "Guest library" : "Personal library"}</strong>
-            </div>
-            <div className="header-actions">
-              <button
-                className="secondary-button"
-                type="button"
-                onClick={compareSelectedRuns}
-                disabled={isComparing || selectedComparisonRuns.length !== 2 || isDeletingAllHistory}
-              >
-                {isComparing && <span className="button-spinner small" aria-hidden="true" />}
-                <span>{isComparing ? "Comparing..." : "Compare"}</span>
-              </button>
-              <button
-                className="secondary-button"
-                type="button"
-                onClick={loadAnalysisHistory}
-                disabled={isLoadingHistory || isDeletingAllHistory}
-              >
-                {isLoadingHistory && <span className="button-spinner small" aria-hidden="true" />}
-                <span>{isLoadingHistory ? "Loading..." : "Refresh"}</span>
-              </button>
-              <button
-                className="danger-button ghost-danger"
-                type="button"
-                onClick={requestDeleteAllSavedAnalyses}
-                disabled={analysisHistory.length === 0 || isDeletingAllHistory || isLoadingHistory}
-              >
-                {isDeletingAllHistory && <span className="button-spinner small" aria-hidden="true" />}
-                <span>{isDeletingAllHistory ? "Deleting all..." : "Delete all"}</span>
-              </button>
-            </div>
-          </div>
-
-          {isLoadingHistory && analysisHistory.length === 0 ? (
-            <div className="history-loading" aria-live="polite">
-              <div className="history-loading-header">
-                <span className="button-spinner" aria-hidden="true" />
-                <strong>Loading previous analyses</strong>
-              </div>
-              <div className="history-skeleton-list" aria-hidden="true">
-                {[1, 2, 3].map((item) => (
-                  <div className="history-skeleton" key={item}>
-                    <span />
-                    <div />
-                    <strong />
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : analysisHistory.length > 0 ? (
-            <div className="history-list">
-              {isLoadingHistory && (
-                <div className="history-refreshing" aria-live="polite">
-                  <span className="button-spinner small" aria-hidden="true" />
-                  Refreshing saved shots...
-                </div>
-              )}
-              {analysisHistory.map((analysis) => {
-                const isOpening = openingRunId === analysis.run_id;
-                const isDeleting = deletingRunId === analysis.run_id;
-                const isBusy = isOpening || isDeleting || isDeletingAllHistory;
-                return (
-                <article className={`history-item ${isBusy ? "is-busy" : ""}`} key={analysis.run_id}>
-                  <label className="compare-check">
-                    <input
-                      type="checkbox"
-                      checked={selectedComparisonRuns.includes(analysis.run_id)}
-                      disabled={isBusy}
-                      onChange={() => toggleComparisonRun(analysis.run_id)}
-                    />
-                    <span>Compare</span>
-                  </label>
-                  <div className="history-main">
-                    <strong>{analysis.video}</strong>
-                    <span>{formatRunDate(analysis.created_at)}</span>
-                  </div>
-                  <div className="history-meta">
-                    <span>Score {analysis.score}</span>
-                    <span>{titleCase(analysis.camera_view || "side")} · {analysis.shooting_side}</span>
-                  </div>
-                  <div className="history-actions">
-                    <button
-                      className="secondary-button history-action-button"
-                      type="button"
-                      onClick={() => openSavedAnalysis(analysis.run_id)}
-                      disabled={isBusy}
-                    >
-                      {isOpening && <span className="button-spinner small" aria-hidden="true" />}
-                      <span>{isOpening ? "Opening..." : "Open"}</span>
-                    </button>
-                    <button
-                      className="danger-button history-action-button"
-                      type="button"
-                      onClick={() => requestDeleteSavedAnalysis(analysis)}
-                      disabled={isBusy}
-                    >
-                      {isDeleting && <span className="button-spinner small" aria-hidden="true" />}
-                      <span>{isDeleting ? "Deleting..." : "Delete"}</span>
-                    </button>
-                  </div>
-                </article>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="empty-state">
-              {isSupabaseConfigured && !session ? "Sign in to view your saved analyses." : "No saved analyses yet."}
-            </p>
-          )}
-        </section>
+          <HistoryPage
+            analysisHistory={analysisHistory}
+            deletingRunId={deletingRunId}
+            isComparing={isComparing}
+            isDeletingAllHistory={isDeletingAllHistory}
+            isGuestMode={isGuestMode}
+            isLoadingHistory={isLoadingHistory}
+            openingRunId={openingRunId}
+            onCompareSelectedRuns={compareSelectedRuns}
+            onDeleteAll={requestDeleteAllSavedAnalyses}
+            onDeleteOne={requestDeleteSavedAnalysis}
+            onLoadHistory={loadAnalysisHistory}
+            onOpenAnalysis={openSavedAnalysis}
+            onToggleComparisonRun={toggleComparisonRun}
+            selectedComparisonRuns={selectedComparisonRuns}
+            session={session}
+          />
         )}
 
         {comparison && (
@@ -1240,7 +1191,7 @@ function App() {
           </section>
         )}
 
-        {result && (
+        {appView === "report" && result && (
           <div className="results-grid stage-card" ref={resultsSectionRef}>
             <section className="score-panel">
               <div>
@@ -1269,12 +1220,36 @@ function App() {
             </section>
 
             <section className="feedback-panel">
-              <h2>Feedback</h2>
-              <ul>
-                {result.feedback.map((item) => (
-                  <li key={item}>{item}</li>
+              <div className="section-header">
+                <div>
+                  <h2>Feedback</h2>
+                  <p className="subtle">Grouped so strengths, fixes, and in-between notes are easier to read.</p>
+                </div>
+                <strong className="feedback-total">{result.feedback.length}</strong>
+              </div>
+              <div className="feedback-groups">
+                {feedbackGroups.map((group) => (
+                  <article className={`feedback-group ${group.id}`} key={group.id}>
+                    <div className="feedback-group-header">
+                      <span>{group.label}</span>
+                      <div>
+                        <h3>{group.title}</h3>
+                        <p>{group.description}</p>
+                      </div>
+                      <strong>{group.items.length}</strong>
+                    </div>
+                    {group.items.length > 0 ? (
+                      <ul>
+                        {group.items.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="empty-feedback">No items in this group.</p>
+                    )}
+                  </article>
                 ))}
-              </ul>
+              </div>
             </section>
 
             {result.quality_warnings?.length > 0 && (
@@ -1326,7 +1301,7 @@ function App() {
               </section>
             )}
 
-            {ballTracking && (
+            {/* {ballTracking && (
               <section className="ball-panel wide">
                 <div className="section-header">
                   <div>
@@ -1411,7 +1386,7 @@ function App() {
                   </div>
                 </div>
               </section>
-            )}
+            )} */}
 
             <section className="improvement-panel wide">
               <h2>What do I need to improve?</h2>
@@ -1608,4 +1583,12 @@ function App() {
   );
 }
 
-createRoot(document.getElementById("root")).render(<App />);
+const rootElement = document.getElementById("root");
+
+if (rootElement) {
+  createRoot(rootElement).render(
+    <AppErrorBoundary>
+      <App />
+    </AppErrorBoundary>
+  );
+}

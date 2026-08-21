@@ -3,7 +3,7 @@
   "analysis_version": "rule-based-mvp-2026-08-15",
   "owner_user_id": "guest",
   "run_dir": "storage/analyses/2026-08-15_201515_ft3_04512f74",
-  "video": "storage/analyses/2026-08-15_201515_ft3_04512f74/input/original.mp4",
+  "video": null,
   "score": 85,
   "shooting_side": "right",
   "camera_view": "side",
@@ -39,7 +39,7 @@
     ]
   },
   "video_metadata": {
-    "fps": 24.0,
+    "fps": 24,
     "frame_count": 240,
     "width": 1280,
     "height": 720
@@ -80,8 +80,8 @@
     "jump_window_start": 92,
     "jump_window_end": 112,
     "ball_tracking_status": "tracked",
-    "ball_visibility_ratio": 1.0,
-    "ball_close_visibility_ratio": 1.0,
+    "ball_visibility_ratio": 1,
+    "ball_close_visibility_ratio": 1,
     "ball_release_frame": 97,
     "ball_release_frame_delta": 0,
     "ball_arc_height": 0.0233,
@@ -136,7 +136,7 @@
       "start_frame": 92,
       "end_frame": 112,
       "evidence_frame_file": "coaching_frame_01",
-      "evidence_frame_path": "storage/analyses/2026-08-15_201515_ft3_04512f74/output/coaching_frame_01.jpg",
+      "evidence_frame_path": "samples/side-ft3/coaching_frame_01.jpg",
       "evidence_frame_number": 92
     },
     {
@@ -151,7 +151,7 @@
       "start_frame": 73,
       "end_frame": 83,
       "evidence_frame_file": "coaching_frame_02",
-      "evidence_frame_path": "storage/analyses/2026-08-15_201515_ft3_04512f74/output/coaching_frame_02.jpg",
+      "evidence_frame_path": "samples/side-ft3/coaching_frame_02.jpg",
       "evidence_frame_number": 73
     },
     {
@@ -166,26 +166,27 @@
       "start_frame": 1,
       "end_frame": 240,
       "evidence_frame_file": "coaching_frame_03",
-      "evidence_frame_path": "storage/analyses/2026-08-15_201515_ft3_04512f74/output/coaching_frame_03.jpg",
+      "evidence_frame_path": "samples/side-ft3/coaching_frame_03.jpg",
       "evidence_frame_number": 1
     }
   ],
   "files": {
-    "original_video": "storage/analyses/2026-08-15_201515_ft3_04512f74/input/original.mp4",
-    "keypoints_csv": "storage/analyses/2026-08-15_201515_ft3_04512f74/data/keypoints.csv",
-    "features_csv": "storage/analyses/2026-08-15_201515_ft3_04512f74/data/features.csv",
+    "original_video": null,
+    "keypoints_csv": null,
+    "features_csv": null,
     "angles_chart": "samples/side-ft3/angles.png",
     "follow_through_debug_chart": "samples/side-ft3/follow_through_debug.png",
     "pose_video": null,
     "annotated_video": "samples/side-ft3/annotated.webm",
-    "json_report": "storage/analyses/2026-08-15_201515_ft3_04512f74/report.json",
+    "json_report": null,
     "coaching_frame_01": "samples/side-ft3/coaching_frame_01.jpg",
     "coaching_frame_02": "samples/side-ft3/coaching_frame_02.jpg",
-    "coaching_frame_03": "samples/side-ft3/coaching_frame_03.jpg"
+    "coaching_frame_03": "samples/side-ft3/coaching_frame_03.jpg",
+    "ball_tracking_csv": null
   },
   "sample_id": "side-ft3",
-  "sample_label": "Good Side View - FT3",
-  "sample_description": "Clean side-view shot with strong score.",
+  "sample_label": "AI Side View - FT3",
+  "sample_description": "AI-generated side-view shot with release and follow-through analysis.",
   "output_urls": {
     "angles_chart": "/samples/side-ft3/angles.png",
     "follow_through_debug_chart": "/samples/side-ft3/follow_through_debug.png",
@@ -200,8 +201,8 @@
     "detected_frames": 240,
     "close_detected_frames": 240,
     "total_frames": 240,
-    "visibility_ratio": 1.0,
-    "close_visibility_ratio": 1.0,
+    "visibility_ratio": 1,
+    "close_visibility_ratio": 1,
     "ball_release_frame": 97,
     "pose_release_frame": 97,
     "release_frame_delta": 0,
@@ -216,6 +217,7 @@
     "requested_backend": "auto",
     "detector_message": "Using heuristic fallback detector.",
     "model_path": null,
-    "model_error": null
+    "model_error": null,
+    "csv_path": null
   }
 }

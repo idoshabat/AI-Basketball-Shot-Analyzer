@@ -1,10 +1,38 @@
 # AI Basketball Shot Analyzer
 
-An end-to-end basketball shooting analysis app that turns a regular shot video into pose data, shooting metrics, coaching feedback, charts, annotated video, saved analysis runs, and shot-to-shot comparisons.
+An end-to-end basketball shooting analysis app that turns a regular phone video into pose data, camera-aware mechanics feedback, evidence frames, annotated video, saved analysis history, and shot-to-shot comparisons.
 
-The goal of this project is not just to detect pose landmarks. It behaves like a small coaching product: upload a shot, get a score, understand what changed, and know what to improve next.
+The goal of this project is not just to detect pose landmarks. It behaves like a small coaching product: upload a shot, choose the filming angle, get a score, understand what changed, and know exactly what to improve next.
 
 ![Sample angle chart](docs/screenshots/sample-angle-chart.png)
+
+## Why It Stands Out
+
+Most pose demos stop at drawing a skeleton. This project goes further:
+
+- It converts raw landmarks into basketball-specific phases, metrics, scoring, and coaching priorities.
+- It changes the analysis based on camera view, because side, front, and back videos reveal different mechanics.
+- It produces evidence frames for each improvement, so feedback is explainable instead of mysterious.
+- It stores user-specific history with Supabase Auth, Postgres, and Storage.
+- It includes ball tracking as a beta signal using heuristic, YOLO, or Roboflow-backed detection.
+- It has a polished React experience with saved reports, comparisons, loading states, delete flows, and demo samples.
+
+## Product Preview
+
+The frontend includes built-in demo reports, so reviewers can explore the product without uploading a video.
+
+| View | What it demonstrates |
+| --- | --- |
+| AI front view `ft10` | Feet direction, knee alignment, forearm verticality, follow-through line, body lean |
+| AI side view `ft3` | Release timing, elbow extension, knee bend, leg drive, jump lift, follow-through hold |
+| AI back view `ft6` | Alignment and shot-line mechanics from behind |
+
+Useful sample assets:
+
+- [Front-view evidence frame](frontend/public/samples/front-ft10/coaching_frame_01.jpg)
+- [Side-view angle chart](frontend/public/samples/side-ft3/angles.png)
+- [Back-view demo report](frontend/public/samples/back-ft6/analysis.json)
+- [Front-view annotated video](frontend/public/samples/front-ft10/annotated.webm)
 
 ## Highlights
 
@@ -23,6 +51,35 @@ The goal of this project is not just to detect pose landmarks. It behaves like a
 - Sign in with Google through Supabase Auth so saved analyses are scoped to the current user.
 - Load a built-in sample result, including annotated video, from the frontend for quick demos without uploading a file.
 
+## Tech Stack
+
+| Layer | Tools |
+| --- | --- |
+| Frontend | React, Vite, custom CSS |
+| Backend | FastAPI, Python |
+| Computer vision | OpenCV, MediaPipe Pose |
+| Data processing | NumPy, pandas |
+| Charts | Matplotlib |
+| Ball detection | Heuristic tracking, optional YOLO, optional Roboflow hosted detector |
+| Auth and persistence | Supabase Auth, Supabase Postgres, Supabase Storage |
+| Deployment | Vercel frontend, Render backend |
+
+## Architecture
+
+```text
+React / Vite frontend
+  -> video upload + camera-view selection
+  -> FastAPI backend
+  -> OpenCV frame reader
+  -> MediaPipe Pose keypoints
+  -> feature extraction
+  -> camera-aware shot analyzer
+  -> ball tracking beta signal
+  -> charts, evidence frames, annotated video
+  -> Supabase report + media persistence
+  -> saved history and shot comparison UI
+```
+
 ## Demo Flow
 
 For a quick project walkthrough:
@@ -35,25 +92,35 @@ For a quick project walkthrough:
 6. Click `Compare to Best` after multiple analyses to compare the current shot with the best saved one.
 
 More presentation notes are in [docs/demo.md](docs/demo.md).
+For a deeper implementation walkthrough, read [docs/technical-overview.md](docs/technical-overview.md).
 
-## Pipeline
+## What The Analyzer Measures
 
-```text
-Video upload
--> OpenCV frame reading
--> MediaPipe pose detection
--> Body keypoints CSV
--> Feature extraction
--> Rule-based shot analysis
--> Coaching report
--> Charts and annotated video
--> Saved run history
--> Shot comparison
-```
+The project separates metrics by camera view so the feedback is grounded in what the camera can actually see.
 
-## Example Output
+### Side View
 
-During local analysis, the backend still creates a working run folder:
+- Release frame and release confidence
+- Elbow extension at release
+- Knee bend and dip/load phase
+- Hip rise and leg drive
+- Ankle lift / jump lift
+- Follow-through hold duration
+- Ball release timing and side-view arc hint when ball detection is stable
+
+### Front / Back View
+
+- Feet direction relative to the shot line
+- Foot stagger during the dip load
+- Knee-to-foot alignment during the load
+- Forearm verticality at release
+- Follow-through line drift
+- Shoulder/torso lean
+- Sideways ball drift when ball detection is stable
+
+## Output Structure
+
+During local analysis, the backend creates a working run folder:
 
 ```text
 storage/analyses/<run_id>/
@@ -72,7 +139,22 @@ In deployed mode, Supabase becomes the persistent source of truth:
 - Supabase Storage stores the UI assets by default: charts, annotated video, and evidence frame images. Original videos, CSVs, and debug files are optional to keep Render memory usage lower.
 - The API returns signed Storage URLs for saved media so Vercel and Render are no longer dependent on Render's temporary filesystem.
 
-Frontend demo data lives under `frontend/public/samples/`. The app includes side-view, front-view, back-view, and bad-input demo samples so visitors can test both clean analysis and quality-warning behavior without uploading a video.
+Frontend demo data lives under `frontend/public/samples/`. The public demo selector includes only AI-generated samples: `front-ft10`, `side-ft3`, and `back-ft6`. Each demo includes evidence images, charts, and an annotated video.
+
+## Engineering Notes
+
+- The score is rule-based by design. It is explainable, tunable, and easier to debug than a black-box score for the current dataset size.
+- Ball tracking is marked beta and does not dominate the grade yet. It is used for visibility, release-frame comparison, and camera-specific flight hints.
+- The frontend warns users when hosted analysis may take a few minutes because the Render backend can run on very limited CPU.
+- The QA script checks known-good and known-bad videos so future threshold changes can be validated instead of tuned from one clip at a time.
+
+## Known Limitations
+
+- The app is not a make/miss predictor yet.
+- The score is a coaching heuristic, not a trained biomechanics model.
+- Camera angle matters. A side-view clip cannot reliably judge foot direction, and a front-view clip cannot reliably judge true shot arc.
+- Ball tracking quality depends on visibility, motion blur, camera distance, and detector configuration.
+- Very crowded or far-away videos may track the wrong player, so the app includes reliability warnings and score caps for poor inputs.
 
 ## Setup
 
@@ -160,6 +242,42 @@ The frontend expects the backend at:
 http://127.0.0.1:8000
 ```
 
+## Model QA
+
+Before tuning scoring, camera-view rules, shooting-hand detection, or ball tracking, run the known-video QA set:
+
+```bash
+PYTHONPATH=src venv/bin/python scripts/model_qa.py
+```
+
+The default QA run uses the heuristic ball detector so it stays fast and offline. The public demo set uses only AI-generated clips:
+
+- `ft10` as the default front-view demo
+- `ft3` as the side-view demo
+- `ft6` as the back-view demo
+
+The script prints score, reliability, camera view, shooting hand, quality warnings, top improvement cards, ball visibility, and pass/fail status.
+
+Use this before and after model changes. If a change improves one video but breaks another, the QA table makes that visible immediately.
+
+To include the hosted Roboflow detector in QA:
+
+```bash
+PYTHONPATH=src venv/bin/python scripts/model_qa.py --ball-backend roboflow
+```
+
+To run one case:
+
+```bash
+PYTHONPATH=src venv/bin/python scripts/model_qa.py --case videos/ft10.mp4
+```
+
+To save a JSON report:
+
+```bash
+PYTHONPATH=src venv/bin/python scripts/model_qa.py --json-output output/model_qa.json
+```
+
 ## Auth Setup
 
 Authentication is optional for local demos, but required for real per-user history.
@@ -209,7 +327,8 @@ Analyze an uploaded video:
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/analyze-shot" \
-  -F "file=@videos/ft2.mp4"
+  -F "file=@videos/ft10.mp4" \
+  -F "camera_view=front"
 ```
 
 Compare two saved analyses:
@@ -224,60 +343,75 @@ Compare one saved analysis to the best saved shot:
 curl "http://127.0.0.1:8000/analyses/<run_id>/compare-best"
 ```
 
+## Project Status
+
+This is a polished MVP with a real product loop:
+
+```text
+Record shot -> Analyze -> Explain mistakes -> Save report -> Compare progress
+```
+
+The next meaningful improvements are dataset-driven:
+
+- run the Model QA suite regularly
+- add more labeled ball frames from varied gyms, balls, and camera angles
+- add more known-good / known-bad pose clips
+- eventually train scoring against human-labeled shot-quality targets
+
 ## CLI Commands
 
 Run the complete analysis pipeline:
 
 ```bash
-python src/analyze_video.py videos/ft2.mp4 --save-chart --save-annotated-video --save-report
+python src/analyze_video.py videos/ft10.mp4 --camera-view front --save-chart --save-annotated-video --save-report
 ```
 
 Read and display a video with pose detection:
 
 ```bash
-python src/video_reader.py videos/ft2.mp4
+python src/video_reader.py videos/ft10.mp4
 ```
 
 Save keypoints:
 
 ```bash
-python src/video_reader.py videos/ft2.mp4 --save-keypoints --no-display
+python src/video_reader.py videos/ft10.mp4 --save-keypoints --no-display
 ```
 
 Extract features:
 
 ```bash
-python src/feature_extractor.py data/ft2_keypoints.csv
+python src/feature_extractor.py data/ft10_keypoints.csv
 ```
 
 Analyze shot features:
 
 ```bash
-python src/shot_analyzer.py data/ft2_features.csv
+python src/shot_analyzer.py data/ft10_features.csv
 ```
 
 Track the ball with the default auto backend:
 
 ```bash
-python src/ball_detector.py videos/ft2.mp4 data/ft2_features.csv --output data/ft2_ball_tracking.csv --shooting-side right --release-frame 48
+python src/ball_detector.py videos/ft10.mp4 data/ft10_features.csv --output data/ft10_ball_tracking.csv --shooting-side right --release-frame 122
 ```
 
 Track the ball with YOLO:
 
 ```bash
-python src/ball_detector.py videos/ft2.mp4 data/ft2_features.csv --output data/ft2_ball_tracking.csv --shooting-side right --release-frame 48 --backend yolo --model-path model/basketball_yolo.pt --yolo-confidence 0.05
+python src/ball_detector.py videos/ft10.mp4 data/ft10_features.csv --output data/ft10_ball_tracking.csv --shooting-side right --release-frame 122 --backend yolo --model-path model/basketball_yolo.pt --yolo-confidence 0.05
 ```
 
 Create an angle chart:
 
 ```bash
-python src/visualize_features.py data/ft2_features.csv
+python src/visualize_features.py data/ft10_features.csv
 ```
 
 Create an annotated video:
 
 ```bash
-python src/video_annotator.py videos/ft2.mp4 data/ft2_features.csv
+python src/video_annotator.py videos/ft10.mp4 data/ft10_features.csv
 ```
 
 ## Metrics
@@ -340,7 +474,7 @@ For a faster hosted demo:
 
 - Disable annotated video by default for public demos, or
 - Use a larger Render instance, or
-- Keep the built-in sample selector available through `Load Demo` so visitors can see side, front, back, and bad-input behavior immediately.
+- Keep the built-in sample selector available through `Load Demo` so visitors can see the AI-generated front, side, and back reports immediately.
 
 ## Project Status
 

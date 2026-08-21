@@ -818,10 +818,10 @@ def score_alignment(metrics: dict) -> tuple[int, list[str]]:
 
     if metrics["body_lean"] <= 0.18 and metrics["shoulder_level_delta"] <= 0.05:
         score += 15
-        feedback.append("Torso and shoulders stay balanced from this angle.")
+        feedback.append("Upper body and shoulders stay balanced from this angle.")
     elif metrics["body_lean"] <= 0.3:
         score += 10
-        feedback.append("Torso balance is acceptable, with some lean or shoulder tilt.")
+        feedback.append("Upper body balance is acceptable, with some lean or shoulder tilt.")
     else:
         score += 5
         feedback.append("Body lean is high; the shot may drift sideways.")
@@ -1167,7 +1167,7 @@ def build_coaching_items(metrics: dict, phases: dict, camera_view: str = "side")
                     severity="medium",
                     metric="body_lean",
                     value=metrics["body_lean"],
-                    target="0.30 or lower normalized torso lean",
+                    target="0.30 or lower normalized upper body lean",
                     why_it_matters="Side lean can push the release line off target.",
                     drill="Shoot balanced form reps and land with your head and hips stacked over the same base.",
                     phase="full_shot",
@@ -1971,7 +1971,7 @@ def print_report(analysis: dict) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Analyze a basketball shot from extracted features.")
-    parser.add_argument("features_csv_path", help="Path to a features CSV, for example data/ft1_features.csv")
+    parser.add_argument("features_csv_path", help="Path to a features CSV, for example data/ft10_features.csv")
     parser.add_argument("--camera-view", choices=["side", "front", "back"], default="side", help="Camera angle used for view-specific scoring")
     args = parser.parse_args()
 

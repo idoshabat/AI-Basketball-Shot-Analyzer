@@ -921,7 +921,7 @@ def track_ball(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Track basketball position in a shot video.")
-    parser.add_argument("video_path", help="Path to a video file, for example videos/ft1.mp4")
+    parser.add_argument("video_path", help="Path to a video file, for example videos/ft10.mp4")
     parser.add_argument("features_csv_path", help="Path to a features CSV")
     parser.add_argument("--output", default=str(DATA_DIR / "ball_tracking.csv"), help="Output CSV path")
     parser.add_argument("--shooting-side", choices=["right", "left"], default="right", help="Shooting hand")

@@ -108,21 +108,7 @@ def add_ball_based_insights(analysis: dict, ball_tracking: dict, ball_tracking_p
         if abs(delta) <= 3:
             feedback.append("Ball tracking confirms the release timing within a few frames of the pose estimate.")
         else:
-            feedback.append("Ball tracking suggests the true ball release may be offset from the pose-only estimate.")
-            coaching_items.append(
-                build_coaching_item(
-                    title="Review the actual ball release moment",
-                    severity="medium",
-                    metric="ball_release_frame_delta",
-                    value=delta,
-                    target="Within 3 frames of the pose release estimate",
-                    why_it_matters="If the ball separates earlier or later than the body estimate, timing feedback can be less precise.",
-                    drill="Use the annotated video and pause around release to verify when the ball leaves the fingers.",
-                    phase="release",
-                    start_frame=ball_release_frame,
-                    end_frame=ball_release_frame,
-                )
-            )
+            feedback.append("Ball tracking and pose timing are not perfectly aligned, so ball-release timing is shown as a beta metric only.")
 
     post_release_rows = [
         row
@@ -685,7 +671,7 @@ def analyze_video(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the full basketball shot analysis pipeline.")
-    parser.add_argument("video_path", help="Path to a video file, for example videos/ft1.mp4")
+    parser.add_argument("video_path", help="Path to a video file, for example videos/ft10.mp4")
     parser.add_argument("--save-output", action="store_true", help="Save a video with the pose skeleton")
     parser.add_argument("--save-chart", action="store_true", help="Save a PNG chart of the extracted angles")
     parser.add_argument("--save-annotated-video", action="store_true", help="Save a video with pose skeleton and analysis overlays")

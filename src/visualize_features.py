@@ -220,7 +220,7 @@ def plot_follow_through_debug(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Create angle charts from extracted shot features.")
-    parser.add_argument("features_csv_path", help="Path to a features CSV, for example data/ft1_features.csv")
+    parser.add_argument("features_csv_path", help="Path to a features CSV, for example data/ft10_features.csv")
     parser.add_argument("--output", help="Optional output PNG path")
     parser.add_argument("--follow-through-debug", action="store_true", help="Create a follow-through debug chart")
     args = parser.parse_args()

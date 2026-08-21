@@ -140,7 +140,7 @@ def extract_features(keypoints_csv_path: str, output_csv_path: str | None = None
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Extract shot features from pose keypoints.")
-    parser.add_argument("keypoints_csv_path", help="Path to a keypoints CSV, for example data/ft1_keypoints.csv")
+    parser.add_argument("keypoints_csv_path", help="Path to a keypoints CSV, for example data/ft10_keypoints.csv")
     parser.add_argument("--output", help="Optional output CSV path")
     args = parser.parse_args()
 

@@ -6,7 +6,7 @@ The pretrained YOLO11n model is generic. It sometimes sees a basketball as `spor
 
 ```bash
 venv/bin/python src/yolo_dataset.py init
-venv/bin/python src/yolo_dataset.py extract videos/ft2.mp4 videos/ft3.mp4 videos/ft4.mp4 videos/ft5.mp4 videos/ft6.mp4 videos/ft7.mp4 videos/ft8.mp4 videos/ft9.mp4 --frames-per-video 40
+venv/bin/python src/yolo_dataset.py extract videos/ft10.mp4 videos/ft3.mp4 videos/ft6.mp4 --frames-per-video 40
 ```
 
 Frames are written to:
